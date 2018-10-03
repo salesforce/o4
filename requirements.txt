@@ -1,4 +1,5 @@
 # Requirement for development, does not go into final distribution
 docopt
 pyflakes
+vulture
 yapf

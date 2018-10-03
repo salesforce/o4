@@ -38,7 +38,6 @@ def crc(paths):
 
 
 def main():
-    from glob import iglob
     from datetime import datetime
     from docopt import docopt
     from subprocess import check_output, CalledProcessError
@@ -54,7 +53,6 @@ def main():
             return ''
 
     opts = docopt(__doc__)
-    print(opts)
     name = git_config('user.name')
     mail = git_config('user.email')
     from configparser import ConfigParser

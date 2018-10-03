@@ -1,9 +1,16 @@
 # python -m pip install -r requirements.txt --target myapp
 
-PYTHON:=$(shell which python3)
-PYS:=$(shell find . -name '*.py'|grep -v '^./build/')
+ifeq (,$(wildcard venv/bin/python))
+$(warning venv IS MISSING. RUN make venv)
+endif
+PYTHON:=venv/bin/python
+VULTURE:=venv/bin/vulture
+YAPF:=venv/bin/yapf
+PYFLAKES:=venv/bin/pyflakes
+PIP:=venv/bin/pip
+PYS:=$(shell find . -name '*.py'|grep -v '^./build/' | grep -v ^'./venv/'|grep -v '/version.py$$')
 O4_SRC:=o4/requirements.txt $(shell find o4 -name '*.py'|grep -v version.py)
-GATLING_SRC:=gatling/requirements.txt $(shell find gatling -name '*.py'|grep -v version.py)
+GATLING_SRC:=gatling/requirements.txt $(shell find gatling -name '*.py'|grep -v '/version.py$$')
 MANIFOLD_SRC:=$(shell find manifold -name '*.py'|grep -v version.py)
 
 LINTS:=$(foreach py, $(PYS), $(dir $(py)).$(basename $(notdir $(py))).lint)
@@ -26,17 +33,17 @@ manifold/version.py: $(GATLING_SRC) $(MANIFOLD_SRC) versioning.py
 
 build/o4.za: $(O4_SRC) o4/version.py
 	mkdir -p $@
-	${PYTHON} -m pip install -r $< --target $@
+	${PIP} install -r $< --target $@
 	cp -a $^ $@
 
 build/gatling.za: $(GATLING_SRC) gatling/version.py
 	mkdir -p $@
-	${PYTHON} -m pip install -r $< --target $@
+	${PIP} install -r $< --target $@
 	cp -a $^ $@
 
 build/manifold.za: $(GATLING_SRC) $(MANIFOLD_SRC) manifold/version.py
 	mkdir -p $@
-	${PYTHON} -m pip install -r $< --target $@
+	${PIP} install -r $< --target $@
 	cp -a $^ $@
 
 build/%: build/%.za
@@ -45,9 +52,10 @@ build/%: build/%.za
 # Only python3.7 has compress, but it's backwards compatible
 	${PYTHON} -m zipapp -p '/usr/bin/env python3' -m $(notdir $@):main $< -o $@
 
-.%.lint: %.py
-	pyflakes $< || true
-	yapf -i $<
+.%.lint: %.py venv
+	${PYFLAKES} $< || true
+	${VULTURE} $< || true
+	${YAPF} -i $<
 	@touch $@
 
 install: $(EXES)
@@ -58,6 +66,11 @@ uninstall: $(EXES)
 	rm -f $(foreach exe, $^, /usr/local/bin/$(notdir $(exe)))
 
 lint: $(LINTS)
+
+venv:
+	python3 -m venv venv
+	${PIP} install --upgrade pip
+	${PIP} install -r requirements.txt
 
 clean:
 	@echo "CLEAN --------------------------------------------"

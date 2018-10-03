@@ -39,7 +39,7 @@ import os
 from signal import SIGINT
 
 
-def main(cmd, max_bytes, max_procs, chunk_size, round_robin, verbose):
+def distribute(cmd, max_bytes, max_procs, chunk_size, round_robin, verbose):
     from sys import stdin, stdout, stderr
     from subprocess import Popen, PIPE
     from time import sleep, time
@@ -202,11 +202,11 @@ def cli():
     return opts
 
 
-if __name__ == '__main__':
+def main():
     opts = cli()
     try:
-        res = main(opts['<args>'], opts['-m'], opts['-n'], opts['-c'],
-                   my_name.startswith('manifold'), opts['-v'])
+        res = distribute(opts['<args>'], opts['-m'], opts['-n'], opts['-c'],
+                         my_name.startswith('manifold'), opts['-v'])
         errs = [r for r in res if r]
         if errs:
             sys.exit(f"*** ERROR: There were {len(errs)} errors out of {len(res)} processes.")
@@ -218,3 +218,7 @@ if __name__ == '__main__':
     except BrokenPipeError:
         print(f'*** ERROR: broken pipe from {opts["<args>"]}', file=sys.stderr)
         raise
+
+
+if __name__ == '__main__':
+    main()

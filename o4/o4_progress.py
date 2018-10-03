@@ -123,3 +123,10 @@ def progress_show(path, delay=0.45):
         sys.stdout.write(chunk)
         n[0] += chunk.count('\n')
     n.pop()
+
+
+##
+# Copyright (c) 2018, salesforce.com, inc.
+# All rights reserved.
+# SPDX-License-Identifier: BSD-3-Clause
+# For full license text, see the LICENSE file in the repo root or https://opensource.org/licenses/BSD-3-Clause

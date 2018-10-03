@@ -10,7 +10,7 @@ SHELL:=/bin/bash
 
 all: lint build/o4 build/gatling build/manifold
 
-build/o4.za: cli/requirements.txt $(wildcard cli/*.py)
+build/o4.za: o4/requirements.txt $(wildcard o4/*.py)
 	mkdir -p $@
 	${PYTHON} -m pip install -r $< --target $@
 	cp -a $^ $@
@@ -20,7 +20,7 @@ build/gatling.za: gatling/requirements.txt $(wildcard gatling/*.py)
 	${PYTHON} -m pip install -r $< --target $@
 	cp -a $^ $@
 
-build/manifold.za: gatling/requirements.txt $(wildcard gatling/*.py)
+build/manifold.za: gatling/requirements.txt $(wildcard gatling/*.py) $(wildcard manifold/*.py)
 	mkdir -p $@
 	${PYTHON} -m pip install -r $< --target $@
 	cp -a $^ $@

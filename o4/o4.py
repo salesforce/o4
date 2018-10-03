@@ -610,7 +610,8 @@ def o4_sync(changelist,
         client = pyforce_client()
         cname = client['Client']
         view = [
-            v[1:].split(' //' + cname) for k, v in client.items()
+            v[1:].split(' //' + cname)
+            for k, v in client.items()
             if k.startswith('View') and not v.startswith('-//')
         ]
 
@@ -817,7 +818,8 @@ def o4_clean(changelist, quick=False, resume=False, discard=False):
         dep = _depot_path().replace('/...', '')
         p4open = [
             Pyforce.unescape(p['depotFile'])[len(dep) + 1:]
-            for p in Pyforce('opened', dep + '/...') if 'delete' not in p['action']
+            for p in Pyforce('opened', dep + '/...')
+            if 'delete' not in p['action']
         ]
         print(f"*** INFO: Not cleaning {len(p4open)} files opened for edit.")
         for of in p4open:
@@ -924,8 +926,8 @@ def parallel_fstat(opts):
             print(p, file=sin)
         sin.seek(0, 0)
         # Makes the assumption that no path is less than 4 bytes:
-        return check_call(
-            ['manifold', '-c', '4', '--', 'xargs', '-n1', 'o4', 'fstat', '-q'], stdin=sin)
+        return check_call(['manifold', '-c', '4', '--', 'xargs', '-n1', 'o4', 'fstat', '-q'],
+                          stdin=sin)
 
 
 def main():

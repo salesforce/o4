@@ -3,13 +3,13 @@
 
 import datetime.datetime
 
-VERSION = (1, 1, 8)
-VERSION_STR = '1.1.8'
+VERSION = (1, 1, 9)
+VERSION_STR = '1.1.9'
 PRODUCT = 'manifold/version.py'
 
 REQ_MD5 = '66d2b20c6fa5c95ac17a05d908889c66'
-PY_MD5 = '76c164b12d481c65131c47dff51e5f9a'
+PY_MD5 = '8c2e6f5a396e0751abc6439d58d34a04'
 
-TIMESTAMP = datetime.datetime(2018, 10, 3, 17, 7, 51, 797392)
+TIMESTAMP = datetime.datetime(2018, 10, 3, 17, 10, 20, 62762)
 USER_NAME = 'Philip Bergen'
 USER_EMAIL = 'pbergen@salesforce.com'

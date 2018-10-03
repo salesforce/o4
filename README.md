@@ -3,13 +3,13 @@ o4 - p4 reliably
 # Background
 
 At salesforce we use Perforce at a very large scale. A scale that
-exposes some short-comings in p4 itself. `o4` was created to improve
+exposes some shortcomings in p4 itself. `o4` was created to improve
 reliability of a sync and increase scalability in our very large scale
 CI.
 
 # Restrictions
 
-In general, `o4` is an encapsulation of p4. This allows the use of
+In general, `o4` is an encapsulation of p4's syncing. This allows the use of
 `o4` without otherwise modifying toolchain or workflow. However *some*
 assumptions was made to allow `o4` to run efficiently.
 
@@ -20,7 +20,9 @@ stored in `.o4` folder in the target directory.
 target trees is not supported. Some mapping works, but it is generally
 discouraged.
 
-3. Python3 only. `o4` source code makes use of f-strings.
+3. Python3.6 or higher. `o4` source code makes use of f-strings.
+
+4. o4 is available only on Linux or macOS.
 
 # What about my...
 
@@ -94,7 +96,7 @@ from the previous position.
 
 CI is usually the opposite. Create a clientspec, flush, sync out the
 few files that are different from the snapshot or what was baked in
-the docker image. Then *delete* the clientspec.
+the image. Then *delete* the clientspec.
 
 `o4` can do most of that without the flush and without populating the
 have-list.
@@ -102,7 +104,7 @@ have-list.
 
 
 
-The cli maintains a cache of fstat files in
+The cli maintains a cache of fstat files in *the vacuum of space*
 
 
 

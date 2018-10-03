@@ -2,6 +2,10 @@
 
 PYTHON:=$(shell which python3)
 PYS:=$(shell find . -name '*.py'|grep -v '^./build/')
+O4_SRC:=o4/requirements.txt $(shell find o4 -name '*.py'|grep -v version.py)
+GATLING_SRC:=gatling/requirements.txt $(shell find gatling -name '*.py'|grep -v version.py)
+MANIFOLD_SRC:=$(shell find manifold -name '*.py'|grep -v version.py)
+
 LINTS:=$(foreach py, $(PYS), $(dir $(py)).$(basename $(notdir $(py))).lint)
 EXES:=build/o4 build/gatling build/manifold
 
@@ -11,26 +15,31 @@ SHELL:=/bin/bash
 
 all: lint $(EXES)
 
-build/o4.za: o4/requirements.txt $(wildcard o4/*.py)
+o4/version.py: $(O4_SRC) versioning.py
+	${PYTHON} versioning.py -r $< -o $@ $^
+
+gatling/version.py: $(GATLING_SRC) versioning.py
+	${PYTHON} versioning.py -r $< -o $@ $^
+
+manifold/version.py: $(GATLING_SRC) $(MANIFOLD_SRC) versioning.py
+	${PYTHON} versioning.py -r $< -o $@ $^
+
+build/o4.za: $(O4_SRC) o4/version.py
 	mkdir -p $@
 	${PYTHON} -m pip install -r $< --target $@
 	cp -a $^ $@
 
-build/gatling.za: gatling/requirements.txt $(wildcard gatling/*.py)
+build/gatling.za: $(GATLING_SRC) gatling/version.py
 	mkdir -p $@
 	${PYTHON} -m pip install -r $< --target $@
 	cp -a $^ $@
 
-build/manifold.za: gatling/requirements.txt $(wildcard gatling/*.py) $(wildcard manifold/*.py)
+build/manifold.za: $(GATLING_SRC) $(MANIFOLD_SRC) manifold/version.py
 	mkdir -p $@
 	${PYTHON} -m pip install -r $< --target $@
 	cp -a $^ $@
 
-build/%.za/version.py: %/version.py versioning.py
-	${PYTHON} versioning.py -r $(dir $@)/requirements.txt -z $(dir $@) -o $<
-	cp -a $< $@
-
-build/%: build/%.za build/%.za/version.py
+build/%: build/%.za
 	rm -fr $</*.dist-info
 	find $< -type d -name __pycache__ | xargs rm -fr
 # Only python3.7 has compress, but it's backwards compatible
@@ -48,10 +57,15 @@ install: $(EXES)
 uninstall: $(EXES)
 	rm -f $(foreach exe, $^, /usr/local/bin/$(notdir $(exe)))
 
-
 lint: $(LINTS)
 
 clean:
 	@echo "CLEAN --------------------------------------------"
 	rm -f $(LINTS)
 	rm -fr build
+
+##
+# Copyright (c) 2018, salesforce.com, inc.
+# All rights reserved.
+# SPDX-License-Identifier: BSD-3-Clause
+# For full license text, see the LICENSE file in the repo root or https://opensource.org/licenses/BSD-3-Clause

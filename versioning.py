@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
 Usage:
-  versioning.py -r <requirements> -z <zipapp> -o <versionfile>
+  versioning.py -r <requirements> -o <versionfile> <sources>...
 
 Options:
   -r <requirements>  Path to the zipapp's requirements.txt
-  -z <zipapp>        Path to the directory that is going to be compressed
+  -i <sources>...    Paths to input sources for version checksumming
   -o <versionfile>   Path to the input/output version file inside the zipapp folder
 """
 
@@ -54,6 +54,7 @@ def main():
             return ''
 
     opts = docopt(__doc__)
+    print(opts)
     name = git_config('user.name')
     mail = git_config('user.email')
     from configparser import ConfigParser
@@ -71,15 +72,13 @@ def main():
             py='',
             name=name,
             mail=mail,
-            product=opts['-z'])
+            product=opts['-o'])
         lines = [line + '\n' for line in lines.split('\n') if '=' in line]
     cfg.read_string('[DEFAULT]\n' + ''.join(lines))
     cfg = cfg['DEFAULT']
 
     rm = crc([opts['-r']])
-    py = crc(
-        path for path in iglob(opts['-z'] + '/*.py', recursive=True)
-        if not path.endswith('/version.py'))
+    py = crc(path for path in opts['<sources>'] if not path.endswith('/version.py'))
     major, minor, step = parse(cfg['version'])
     if rm != parse(cfg['req_md5']):
         step = 0
@@ -99,7 +98,7 @@ def main():
                     py=py,
                     name=name,
                     mail=mail,
-                    product=opts['-z']))
+                    product=opts['-o']))
             print(f"{opts['-o']}: {major}.{minor}.{step}")
         except:
             from traceback import print_exc
@@ -111,3 +110,9 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+##
+# Copyright (c) 2018, salesforce.com, inc.
+# All rights reserved.
+# SPDX-License-Identifier: BSD-3-Clause
+# For full license text, see the LICENSE file in the repo root or https://opensource.org/licenses/BSD-3-Clause

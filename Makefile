@@ -3,12 +3,13 @@
 PYTHON:=$(shell which python3)
 PYS:=$(shell find . -name '*.py'|grep -v '^./build/')
 LINTS:=$(foreach py, $(PYS), $(dir $(py)).$(basename $(notdir $(py))).lint)
+EXES:=build/o4 build/gatling build/manifold
 
 SHELL:=/bin/bash
 
-.PHONY: clean ziptmp lint
+.PHONY: clean lint install
 
-all: lint build/o4 build/gatling build/manifold
+all: lint $(EXES)
 
 build/o4.za: o4/requirements.txt $(wildcard o4/*.py)
 	mkdir -p $@
@@ -25,18 +26,22 @@ build/manifold.za: gatling/requirements.txt $(wildcard gatling/*.py) $(wildcard 
 	${PYTHON} -m pip install -r $< --target $@
 	cp -a $^ $@
 
-build/%: build/%.za
+build/%.za/version.py: %/version.py versioning.py
+	${PYTHON} versioning.py -r $(dir $@)/requirements.txt -z $(dir $@) -o $<
+	cp -a $< $@
+
+build/%: build/%.za build/%.za/version.py
 	rm -fr $</*.dist-info
 	find $< -type d -name __pycache__ | xargs rm -fr
 # Only python3.7 has compress, but it's backwards compatible
 	${PYTHON} -m zipapp -p '/usr/bin/env python3' -m $(notdir $@):main $< -o $@
-
 
 .%.lint: %.py
 	pyflakes $< || true
 	yapf -i $<
 	@touch $@
 
+install:
 
 lint: $(LINTS)
 

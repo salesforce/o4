@@ -36,7 +36,9 @@ you can use `o4` and continue using your IDE plugins, p4v, and such. `o4` is a m
 
 3. Create a clientspec: `p4 client`
 
-4. TBD... Probably zipapps
+4. Build the zipapps: `make`
+
+5. Install the zipapps: `[ $(uname) = Darwin ] && make install || sudo make install`
 
 # Basic usage
 

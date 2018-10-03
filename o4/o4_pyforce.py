@@ -186,3 +186,10 @@ def head(depot_path):
         depot_path += '/...'
     return int(
         list(Pyforce('changes', '-s', 'submitted', '-m1', Pyforce.escape(depot_path)))[0]['change'])
+
+
+##
+# Copyright (c) 2018, salesforce.com, inc.
+# All rights reserved.
+# SPDX-License-Identifier: BSD-3-Clause
+# For full license text, see the LICENSE file in the repo root or https://opensource.org/licenses/BSD-3-Clause

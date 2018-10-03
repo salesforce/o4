@@ -179,7 +179,7 @@ def cli():
 
     global my_name
     args = sys.argv[1:]
-    if args[0] in ('gatling', 'manifold'):
+    if args and args[0] in ('gatling', 'manifold'):
         my_name = args.pop(0)
     else:
         my_name = os.path.basename(sys.argv[0])

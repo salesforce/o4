@@ -7,7 +7,7 @@ EXES:=build/o4 build/gatling build/manifold
 
 SHELL:=/bin/bash
 
-.PHONY: clean lint install
+.PHONY: clean lint install uninstall
 
 all: lint $(EXES)
 
@@ -41,7 +41,13 @@ build/%: build/%.za build/%.za/version.py
 	yapf -i $<
 	@touch $@
 
-install:
+install: $(EXES)
+	install -d /usr/local/bin
+	install $^ /usr/local/bin
+
+uninstall: $(EXES)
+	rm -f $(foreach exe, $^, /usr/local/bin/$(notdir $(exe)))
+
 
 lint: $(LINTS)
 

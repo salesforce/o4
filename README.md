@@ -1,11 +1,23 @@
-o4 - p4 reliably
-
-# Background
+# o4 - Background
 
 At salesforce we use Perforce at a very large scale. A scale that
 exposes some shortcomings in p4 itself. `o4` was created to improve
 reliability of a sync and increase scalability in our very large scale
 CI.
+
+What that boils down to is the rather horrendous reality that a `p4
+sync` makes *most* of the changes to your local files...
+
+## Why o4?
+
+`o4` allows you to continue using Perforce and all the associated
+tools and IDE plugins, without the uncertainty around a sync. Every
+sync is guaranteed perfect, every single time. In the rare occurence
+that a sync could not be met to 100%, `o4` will fail loudly. Crash and
+burn. No more silent errors!
+
+In addition to that `o4` allows some dramatic improvements to CI, more
+on that in the [server/README.md](server documentation).
 
 # Restrictions
 
@@ -24,10 +36,11 @@ discouraged.
 
 4. o4 is available only on Linux or macOS.
 
-# What about my...
+## What about my...
 
 All your tools continue to work like they normally would. That means
-you can use `o4` and continue using your IDE plugins, p4v, and such. `o4` is a mere encapsulation
+you can use `o4` and continue using your IDE plugins, p4v, and
+such. All `o4` is, is an encapsulation of p4 that verifies everything.
 
 # Installation
 
@@ -68,16 +81,19 @@ o4 clean .
 # Advanced capability
 
 
-## Smart clone
+## Smart clone (seeded sync)
 
 Smart clone uses locally available files (either copy of files or a
-similar branch synced in a different directory) to quickly sync out a
-large number of files.
+similar branch synced in a different directory) as a seed to quickly
+sync out a large number of files.
 
 The idea being that you have two branches, say trunk and production,
 that are very similar. To spare the stress on the server, network, and
 VPN (for instance), `o4` uses checksumming to determine which locally
 available files are identical to the one on the server.
+
+Alternatively, start with a somewhat dated version of the fileset in a
+tarball and use that as a starting point.
 
 Example:
 
@@ -87,35 +103,32 @@ o4 sync trunk  # Refresh the trunk
 o4 sync prod -s trunk
 ```
 
-## CI optimizations
+Tarball example:
 
-Continuous integration (CI) often has a very adverse usage
-pattern. Perforce is designed for clientspecs as the key to the
-have-list and files are synced incrementally. Extending over and over
-from the previous position.
+```sh
+cd ~/Code
+tar xfz trunk-jan-2017.tgz
+o4 sync trunk -s trunk-jan-2017
+```
 
-CI is usually the opposite. Create a clientspec, flush, sync out the
-few files that are different from the snapshot or what was baked in
-the image. Then *delete* the clientspec.
+You could also use clean with the tarball:
 
-`o4` can do most of that without the flush and without populating the
-have-list.
-
-
-
-
-The cli maintains a cache of fstat files in *the vacuum of space*
-
-
-
-
-
-
-
-
-
+```sh
+cd ~/Code
+tar xfz trunk-jan-2017.tgz
+mv trunk-jan-2017 trunk
+o4 clean trunk
+```
 
 # Copyright
 
 Helix core, P4 and Perforce are registered trademarks owned by
 Perforce Software, Inc.
+
+## o4 license and copyright
+
+Copyright (c) 2018, salesforce.com, inc. All rights reserved.
+
+SPDX-License-Identifier: BSD-3-Clause
+
+For full license text, see the license.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause

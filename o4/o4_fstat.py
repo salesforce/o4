@@ -144,9 +144,8 @@ def get_fstat_cache(changelist, o4_dir='.o4'):
     import glob
     changelist = int(changelist)
     fstats = glob.glob(f'{o4_dir}/*.fstat.gz')
-    cls = sorted(
-        (int(os.path.basename(f).split('.', 1)[0]) for f in fstats),
-        key=lambda x: (abs(x - changelist), x))
+    cls = sorted((int(os.path.basename(f).split('.', 1)[0]) for f in fstats),
+                 key=lambda x: (abs(x - changelist), x))
     cls = [c for c in cls if c <= changelist]
     if cls:
         return cls[0], f"{o4_dir}/{cls[0]}.fstat.gz"

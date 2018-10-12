@@ -135,7 +135,7 @@ def o4_seed_from(seed_dir, seed_fstat, op):
 
     seed_checksum = None
     if seed_fstat:
-        seed_checksum = {f[F_PATH]: f[F_CHECKSUM] for f in fstat_from_csv(seed_fstat)}
+        seed_checksum = {f[F_PATH]: f[F_CHECKSUM] for f in fstat_from_csv(seed_fstat) if f}
     target_dir = os.getcwd()
     with chdir(seed_dir):
         for line in sys.stdin:
@@ -258,7 +258,7 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
             fstat_cl_path,
             progress_iter(
                 fstat_iter(_depot_path(), changelist),
-                os.getcwd() + '/.o4/.fstat', 'fstat-reverse')))
+                os.getcwd() + '/.o4/.fstat', 'fstat-reverse')) if r[1])
         if not keep:
             keep = set()
         if not drop:
@@ -268,6 +268,8 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
                 progress_iter(
                     fstat_iter(_depot_path(), previous_cl, changelist),
                     os.getcwd() + '/.o4/.fstat', 'fstat-reverse')):
+            if not f:
+                continue
             if f[F_PATH] not in past_filenames:
                 print(f'{changelist},0,0,reverse_sync/delete,text,,{f[F_PATH]}')
                 if force:
@@ -296,6 +298,8 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
             os.getcwd() + '/.o4/.fstat', 'fstat'):
         if keep is not None or drop is not None:
             _, path, _ = fstat_cl_path(line)
+            if not path:
+                continue
             if drop is not None:
                 drop.discard(path)
                 if len(drop) != drop_n:
@@ -750,10 +754,10 @@ def o4_sync(changelist,
 
         cmd = (f"{fstat} --keep {openf.name}"
                f"| {o4bin} pyforce sync"
-               f"| {gatling_verbose} {o4bin} pyforce --no-rev -- resolve -am"
+               f"| {gatling_verbose} -- {o4bin} pyforce --no-rev -- resolve -am"
                f"{progress}"
                f"| {o4bin} drop --exist"
-               f"| {gatling_verbose} {o4bin} pyforce --no-rev -- revert"
+               f"| {gatling_verbose} -- {o4bin} pyforce --no-rev -- revert"
                f"| {o4bin} drop --exist"
                f"| {o4bin} fail")
         fstat += f' --drop {openf.name}'
@@ -974,8 +978,8 @@ def parallel_fstat(opts):
             print(p, file=sin)
         sin.seek(0, 0)
         # Makes the assumption that no path is less than 4 bytes:
-        return check_call(
-            ['manifold', '-c', '4', '--', 'xargs', '-n1', 'o4', 'fstat', '-q'], stdin=sin)
+        return check_call(['manifold', '-c', '4', '--', 'xargs', '-n1', 'o4', 'fstat', '-q'],
+                          stdin=sin)
 
 
 def add_implicit_args(args):

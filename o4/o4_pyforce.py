@@ -79,7 +79,8 @@ class Pyforce(object):
                     # {b'code': b'error', b'data': b'SSL receive failed.\nread: Connection timed out: Connection timed out\n', b'severity': 3, b'generic': 38}
                     # 'data': 'TCP receive exceeded maximum configured duration of 60 seconds.\n', 'severity': 3, 'generic': 38
                     # This seems like it could be 100 different messages; we probably need #TODO find out what generic means.
-                    elif b'Connection timed out' in res[b'data'] or b'TCP receive exceeded' in res[b'data']:
+                    elif b'Connection timed out' in res[b'data'] or b'TCP receive exceeded' in res[
+                            b'data']:
                         raise P4TimeoutError(res, self.args)
                     if res[b'code'] != b'error':
                         return self.transform(res)

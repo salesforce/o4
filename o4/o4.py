@@ -3,7 +3,7 @@
 Usage:
   o4 sync <path> [-v] [-q] [-f] [+o] [-S <seed>] [-s <seed> [--move]] [-m <ignored>]
   o4 clean <path> [-v] [-q] [--resume] [--discard]
-  o4 fstat <paths>... [-q] [--changed <previous>] [--drop <fname>] [--keep <fname>]
+  o4 fstat <paths>... [-q] [-f] [--changed <previous>] [--drop <fname>] [--keep <fname>] [--report <report>]
   o4 seed-from <dir> [--fstat <fstat>] [--move]
   o4 (drop|keep) [--case] [--open] [--exist] [--checksum]
   o4 drop --havelist
@@ -28,6 +28,7 @@ Option:
   --changed <previous>  Only output fstat for changes in (<previous>,<changelist>]
   --drop <fname>  Remove fstat with path listed in <fname>.
   --keep <fname>  Only keep fstat with path listed in <fname>.
+  --report <report>  Print the report string with interpolated values after the fstat operation.
   seed-from     Copy files from the seed directory if they match what we want from Perforce.
                 If the named fstat file exists in the seed's .o4, it will be used, otherwise
                 the file will be checksummed. Outputs on stdout files it did not copy.
@@ -42,7 +43,7 @@ Option:
   --checksum    Filter files that have the correct checksum.
   --havelist    Filter files that are at the revision that the "have" data says they should be.
   -q            Skip second pass for sync, or for pyforce/fstat to be quiet.
-  -f            Force sync all files in second pass.
+  -f            Force all files to be verified and synced.
   +o            Do not sync open files.
   pyforce       Use pyforce to execute the p4 command (<p4args>...) on fstat on stdin.
   --no-rev      Send the depot path to p4 without the revision number.
@@ -76,8 +77,8 @@ err_print = functools.partial(print, file=sys.stderr)
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from o4_pyforce import Pyforce, P4Error, P4TimeoutError, info as pyforce_info, \
-    client as pyforce_client
-from o4_fstat import fstat_from_csv, fstat_iter, get_fstat_cache, \
+    client as pyforce_client, clear_cache
+from o4_fstat import fstat_from_csv, fstat_iter, fstat_cl_path, fstat_split, get_fstat_cache, \
     F_REVISION, F_FILE_SIZE, F_LAST_ACTION, F_FILE_TYPE, F_CHECKSUM, F_PATH
 from o4_progress import progress_iter, progress_show, progress_enabled
 from o4_utils import chdir, consume
@@ -86,16 +87,24 @@ CLR = '%c[2K\r' % chr(27)
 
 
 def find_o4bin():
-    try:
-        return check_output(['which', 'o4'], stderr=DEVNULL).decode(sys.stdout.encoding).strip()
-    except CalledProcessError:
-        return __file__
+    # "Why not just use which?" "Sparse docker base images."
+    import stat
+    for d in os.environ['PATH'].split(':'):
+        try:
+            path = os.path.join(d, 'o4')
+            mode = os.stat(path).st_mode
+            if stat.S_ISREG(mode):
+                return path
+        except OSError:
+            pass
+    return __file__
 
 
 def _depot_path():
-    if 'DEPOT_PATH' in os.environ:
-        return os.environ['DEPOT_PATH']
-    return Pyforce.unescape(list(Pyforce('where', '.'))[0]['depotFile'])
+    if 'DEPOT_PATH' not in os.environ:
+        os.environ['DEPOT_PATH'] = os.path.dirname(
+            Pyforce.unescape(list(Pyforce('where', 'dummy'))[0]['depotFile']))
+    return os.environ['DEPOT_PATH']
 
 
 def o4_seed_from(seed_dir, seed_fstat, op):
@@ -108,36 +117,31 @@ def o4_seed_from(seed_dir, seed_fstat, op):
     def no_uchg(*fnames):
         check_call(['chflags', 'nouchg'] + [fname for fname in fnames if os.path.exists(fname)])
 
-    def copy(src, dest):
-        try:
-            os.makedirs(os.path.dirname(dest), exist_ok=True)
-            shutil.copy2(src, dest, follow_symlinks=False)
-        except IOError as e:
-            print(f'# ERROR COPYING {src}: {e!r}')
-
-    def move(src, dest):
-
+    def update_target(src, dest, fsop):
         try:
             try:
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
-                shutil.move(src, dest)
+                fsop(src, dest)
             except IOError as e:
                 if e.errno == EPERM and sys.platform == 'darwin':
                     no_uchg(src, dest)
-                    shutil.move(src, dest)
+                    fsop(src, dest)
                 else:
                     raise
         except IOError as e:
             print(f'# ERROR MOVING {src}: {e!r}')
 
-    update_target = move if op == 'move' else copy
+    fsop = shutil.move if op == 'move' else shutil.copy2
 
     seed_checksum = None
     if seed_fstat:
         seed_checksum = {f[F_PATH]: f[F_CHECKSUM] for f in fstat_from_csv(seed_fstat)}
     target_dir = os.getcwd()
     with chdir(seed_dir):
-        for f in fstat_from_csv('-'):
+        for line in sys.stdin:
+            f = fstat_split(line)
+            if not f:
+                continue
             if f[F_LAST_ACTION].endswith('delete'):
                 continue
             dest = os.path.join(target_dir, f[F_PATH])
@@ -159,56 +163,61 @@ def o4_seed_from(seed_dir, seed_fstat, op):
                 copyit = f[F_CHECKSUM] == Pyforce.checksum(f[F_PATH], f[F_FILE_TYPE],
                                                            int(f[F_FILE_SIZE]))
             if not copyit:
-                print(','.join(f))
+                print(line, end='')  # line already ends with '\n'
                 continue
-            update_target(f[F_PATH], dest)
+            update_target(f[F_PATH], dest, fsop)
 
 
-def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False):
-    """ Target: changelist
-        Source (optional): previous_cl
-        drop: Input file path for listing of files to exclude
-        keep: Input file path for listing of files to limit output to
-
-        Missing fstat files for changelist and previous_cl are generated automatically.
-
-        Streams to stdout the fstat CSV from .o4/<changelist>.fstat.gz
-
-        IF not previous_cl:
-
-            Stream every entry from changelist (essentially gzcat), while applying drop_keep if
-            given.
-
-        IF previous_cl == changelist:
-
-            Stream nothing.
-
-        IF previous_cl < changelist:
-
-            Only items in changelist that are newer than previous_cl are streamed. Apply drop_keep.
-
-        IF previous_cl > changelist
-
-            This reverse sync scenario is a little complicated:
-            * Use the forward sync iterator to determine all files that should be synced.
-            * Find branched or added files and generate false entries to have them deleted:
-                '<changelist>,0,0,reverse_sync/delete,text,,<path>'
-            * Add all other file names to KEEP and stream matches at <changelist>.
-
-        DROP: Exclude fstat from the stream, if the fstat path is in the drop-file.
-
-        KEEP: Limit fstat from the stream to paths listed in the keep-file.
+def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=False):
     """
+    changelist: Target changelist
+    previous_cl: Previous_cl if known (otherwise 0)
+    drop: Input file name with a line-by-line file list of filenames
+          to exclude from output
+    keep: Input file name with a line-by-line file list of filenames
+          to limit output to
 
-    def depot_path(line):
-        start = line.find(',')
-        n = 6
-        while start >= 0 and n > 1:
-            start = line.find(',', start + 1)
-            n -= 1
-            if n == 1:
-                return line[start + 1:]
-        return ''
+    force: output all fstat lines even though previous_cl is set. This only affects
+           fstat when previous_cl is more recent than changelist (reverse sync).
+
+    Missing fstat files for changelist and previous_cl are generated automatically.
+
+    Streams to stdout the fstat CSV from .o4/<changelist>.fstat.gz
+
+    IF not previous_cl:
+
+        Stream every entry from changelist (essentially gzcat), while
+        applying drop_keep if given.
+
+    IF previous_cl == changelist:
+
+        Stream nothing.
+
+    IF previous_cl < changelist:
+
+        Only items in changelist that are newer than previous_cl are
+        streamed. Apply drop_keep.
+
+    IF previous_cl > changelist
+
+        This reverse sync scenario is a little complicated:
+
+        * Use the forward sync iterator to determine all files that
+          should be synced.
+
+        * Find branched or added files and generate false entries to
+          have them deleted:
+          '<changelist>,0,0,reverse_sync/delete,text,,<path>'
+
+        * Add all other file names to KEEP and stream matches at
+          <changelist>.
+
+    DROP: Exclude fstat from the stream, if the fstat path is in the
+          drop-file.
+
+    KEEP: Limit fstat from the stream to paths listed in the
+          keep-file.
+    """
 
     if os.environ.get('DEBUG', ''):
         print(
@@ -245,18 +254,26 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False):
     if previous_cl and previous_cl > changelist:
         # Syncing backwards requires us to delete files that were added between the lower and
         # higher changelist. All other files must be synced to their state at the lower changelist
-        keep = set()
-        for line in progress_iter(
-                fstat_iter(_depot_path(), previous_cl, changelist),
-                os.getcwd() + '/.o4/.fstat', 'fstat-reverse'):
-            cols = line.split(',', 6)
-            if cols[3].endswith('add') or cols[3] == 'branch':
-                print(f'{changelist},0,0,reverse_sync/delete,text,,{cols[6]}')
-            else:
-                # This will also add lines for files added and subsequently deleted in the
-                # interval, causing keep to still have items at the end of the run and that
-                # is not a bug
-                keep.add(cols[6])
+        past_filenames = set(r[1] for r in map(
+            fstat_cl_path,
+            progress_iter(
+                fstat_iter(_depot_path(), changelist),
+                os.getcwd() + '/.o4/.fstat', 'fstat-reverse')))
+        if not keep:
+            keep = set()
+        if not drop:
+            drop = set()
+        for f in map(
+                fstat_split,
+                progress_iter(
+                    fstat_iter(_depot_path(), previous_cl, changelist),
+                    os.getcwd() + '/.o4/.fstat', 'fstat-reverse')):
+            if f[F_PATH] not in past_filenames:
+                print(f'{changelist},0,0,reverse_sync/delete,text,,{f[F_PATH]}')
+                if force:
+                    drop.add(f[F_PATH])
+            elif not force:
+                keep.add(f[F_PATH])
         previous_cl = 0
 
     if drop and keep:
@@ -278,7 +295,7 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False):
             fstat_iter(_depot_path(), changelist, previous_cl),
             os.getcwd() + '/.o4/.fstat', 'fstat'):
         if keep is not None or drop is not None:
-            path = depot_path(line)
+            _, path, _ = fstat_cl_path(line)
             if drop is not None:
                 drop.discard(path)
                 if len(drop) != drop_n:
@@ -305,11 +322,11 @@ def o4_drop_have(verbose=False):
     pre = len(_depot_path().replace('/...', '')) + 1
     have = None
     # We have to wait with pulling the server havelist until we have the input in its entirety
-    fstats = list(fstat_from_csv('-'))
-    for f in fstats:
+    lines = sys.stdin.read().splitlines()
+    for line in lines:
         if not have:
             if have is not None:
-                print(','.join(f))
+                print(line)
                 continue
             t0 = time.time()
             # We are getting have list in text mode because marshalled python objects are too slow
@@ -325,11 +342,14 @@ def o4_drop_have(verbose=False):
             if verbose:
                 t0, t1 = time.time(), t0
                 err_print("# SORT", t0 - t1)
+        f = fstat_split(line)
+        if not f:
+            continue
         needle = f"{Pyforce.escape(f[F_PATH])}#{f[F_REVISION]} -"
         i = bisect_left(have, needle)
         miss = (i == len(have)) or not have[i].startswith(needle)
         if miss and not f[F_LAST_ACTION].endswith('delete'):
-            print(','.join(f))
+            print(line)
     if verbose:
         t0, t1 = time.time(), t0
         err_print("# BISECT", t0 - t1)
@@ -417,7 +437,9 @@ def o4_filter(filtertype, filters):
         pkeep, pdrop = pp, nop
 
     try:
-        for row in fstat_from_csv('-'):
+        for row in map(fstat_split, sys.stdin):
+            if not row:
+                continue
             for f in funcs:
                 ret = f(row)
                 if ret:
@@ -441,7 +463,7 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
     from collections import defaultdict
 
     tmpf = NamedTemporaryFile(dir='.o4')
-    fstats = list(fstat_from_csv('-'))
+    fstats = [f for f in map(fstat_split, sys.stdin.read().splitlines()) if f]
     retries = 3
     head = _depot_path().replace('/...', '')
     while fstats:
@@ -487,6 +509,8 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
                     # TODO: resolveFlag can be ...?
                     #         m: merge
                     #         c: copy from  (not conflict!)
+                    # We skip this entry as it is the second returned from p4
+                    # for one input file
                     continue
                 res_str = res.get('depotFile') or res.get('fromFile')
                 if not res_str and res.get('data'):
@@ -548,13 +572,18 @@ def o4_sync(changelist,
             quick=False,
             force=False,
             skip_opened=False,
-            verbose=True):
+            verbose=True,
+            gatling=True,
+            manifold=True):
     """ Syncs CWD to changelist, as efficiently as possible.
 
         seed: Input dir for seeding.
         seed_move: Move seed files instead of copy.
         force: Go through every single file not just what's new.
         quick: Skip post p4 sync verification.
+
+        gatling: Set to false to disable the use of gatling
+        manifold: Set to false to disable the use of manifold
 
         Pseudo code to use also as inspiration for fault finding:
 
@@ -650,33 +679,50 @@ def o4_sync(changelist,
             err_print('\n'.join(msg))
             sys.exit(1)
 
+    def gat(cmd):
+        if not gatling:
+            return ''
+        return cmd
+
+    def man(cmd):
+        if not manifold:
+            return ''
+        return cmd
+
     if not clientspec_is_vanilla():
-        print('*** ERROR: o4 does not support a clientspec that maps a depot '
-              'path to a non-matching local path. '
-              'Are you aware that you have such a mapping? Do you need it? '
-              'If not, please remove it and sync again. If so, '
-              'please post to the BLT chatter group that you have such a '
-              'clientspec; meanwhile you must use p4/p4v to sync.')
-        sys.exit(1)
+        # If there was no cached client, or if we refresh it and
+        # it's still bad, then abort.
+        if not clear_cache('client') or not clientspec_is_vanilla():
+            clear_cache('client')
+            sys.exit('*** ERROR: o4 does not support a clientspec that maps a depot '
+                     'path to a non-matching local path. '
+                     'Are you aware that you have such a mapping? Do you need it? '
+                     'If not, please remove it and sync again. If so, '
+                     'please post to the BLT chatter group that you have such a '
+                     'clientspec; meanwhile you must use p4/p4v to sync.')
 
     o4bin = find_o4bin()
 
-    previous_cl = ''
+    previous_cl = 0
     if os.path.exists('.o4/changelist'):
         with open('.o4/changelist') as fin:
             try:
                 previous_cl = int(fin.read().strip())
             except ValueError:
-                pass
+                print(
+                    "{CLR}*** WARNING: {os.getcwd()}/.o4/changelist could not be read",
+                    file=sys.stderr)
 
     verbose = ' -v' if verbose else ''
     force = ' -f' if force else ''
-    fstat = f"{o4bin} fstat ...@{changelist}"
-    gatling_low = f"gatling{verbose} -n 4"
+    fstat = f"{o4bin} fstat{force} ...@{changelist}"
+    gatling_low = gat(f"gatling{verbose} -n 4")
     if previous_cl and not force:
         fstat += f" --changed {previous_cl}"
         gatling_low = ''
-    manifold_big = f"manifold{verbose} -m {10*1024*1024}"
+    manifold_big = man(f"manifold{verbose} -m {10*1024*1024}")
+    gatling_verbose = gat(f"gatling{verbose}")
+    manifold_verbose = man(f"manifold{verbose}")
     progress = f"| {o4bin} progress" if sys.stdin.isatty() and progress_enabled() else ''
 
     casefilter = ''
@@ -704,10 +750,10 @@ def o4_sync(changelist,
 
         cmd = (f"{fstat} --keep {openf.name}"
                f"| {o4bin} pyforce sync"
-               f"| {o4bin} pyforce --no-rev -- resolve -am"
+               f"| {gatling_verbose} {o4bin} pyforce --no-rev -- resolve -am"
                f"{progress}"
                f"| {o4bin} drop --exist"
-               f"| {o4bin} pyforce --no-rev -- revert"
+               f"| {gatling_verbose} {o4bin} pyforce --no-rev -- revert"
                f"| {o4bin} drop --exist"
                f"| {o4bin} fail")
         fstat += f' --drop {openf.name}'
@@ -720,17 +766,17 @@ def o4_sync(changelist,
 
     quiet = '-q' if seed else ''
     retry = (f"| {manifold_big} {o4bin} drop --checksum"
-             f"| gatling{verbose} {o4bin} {quiet} pyforce sync -f"
+             f"| {gatling_verbose} {o4bin} {quiet} pyforce sync -f"
              f"| {manifold_big} {o4bin} drop --checksum"
              f"| {o4bin} fail")
     seedcmd = ''
     if seed:
-        seedcmd = f"| manifold{verbose} {o4bin} seed-from {seed}"
-        _, seed_fstat = get_fstat_cache(seed)
+        seedcmd = f"| {manifold_verbose} {o4bin} seed-from {seed}"
+        _, seed_fstat = get_fstat_cache(10_000_000_000, seed + '/.o4')
         if seed_fstat:
-            seedcmd += " --fstat {os.path.abspath(seed_fstat)}"
+            seedcmd += f" --fstat {os.path.abspath(seed_fstat)}"
         if seed_move:
-            seedcmd += ' --move'
+            seedcmd += " --move"
 
     cmd = (f"{fstat}"
            f"| {manifold_big} {o4bin} drop --checksum"
@@ -738,7 +784,7 @@ def o4_sync(changelist,
            f"{casefilter}"
            f"{seedcmd}"
            f"{progress}"
-           f"| gatling{verbose} {o4bin} {quiet} pyforce sync{force}")
+           f"| {gatling_verbose} {o4bin} {quiet} pyforce sync{force}")
     if not seed:
         cmd += retry
     run_cmd(cmd)
@@ -750,7 +796,7 @@ def o4_sync(changelist,
             consume(Pyforce('sync', '-k', f'...@{changelist}'))
             print("*** INFO: Flushing took {:.2f} minutes".format((time.time() - t0) / 60))
         cmd = fstat + unopened + casefilter + (f"| {manifold_big} {o4bin} drop --checksum"
-                                               f"| gatling{verbose} {o4bin} pyforce sync{force}")
+                                               f"| {gatling_verbose} {o4bin} pyforce sync{force}")
         cmd += retry
         run_cmd(cmd)
 
@@ -845,7 +891,9 @@ def o4_clean(changelist, quick=False, resume=False, discard=False):
 def o4_fail():
     files = []
     n = 0
-    for f in fstat_from_csv('-'):
+    for f in map(fstat_split, sys.stdin):
+        if not f:
+            continue
         n += 1
         if n < 100:
             files.append(f"  {f[F_PATH]}#{f[F_REVISION]}")
@@ -926,8 +974,20 @@ def parallel_fstat(opts):
             print(p, file=sin)
         sin.seek(0, 0)
         # Makes the assumption that no path is less than 4 bytes:
-        return check_call(['manifold', '-c', '4', '--', 'xargs', '-n1', 'o4', 'fstat', '-q'],
-                          stdin=sin)
+        return check_call(
+            ['manifold', '-c', '4', '--', 'xargs', '-n1', 'o4', 'fstat', '-q'], stdin=sin)
+
+
+def add_implicit_args(args):
+    import o4_config
+
+    for i, word in enumerate(args):
+        if not word.startswith('-'):
+            break
+    if args:
+        config_args = o4_config.cmdline_args(word)
+        if config_args:
+            args[i + 1:i + 1] = config_args
 
 
 def main():
@@ -935,6 +995,7 @@ def main():
 
     os.environ['PYTHONUNBUFFERED'] = 'true'
     args = sys.argv[1:]
+    add_implicit_args(args)
     if 'pyforce' in args and '--' not in args:
         # YUCK! Since p4 args look like undocumented options to docopt we have to put the '--'
         # marker so they are not parsed
@@ -1031,7 +1092,10 @@ def main():
     os.environ['CHANGELIST'] = str(opts['@'])
     try:
         if opts['fstat']:
-            o4_fstat(opts['@'], opts['--changed'], opts['--drop'], opts['--keep'], opts['-q'])
+            actual_cl = o4_fstat(opts['@'], opts['--changed'], opts['--drop'], opts['--keep'],
+                                 opts['-q'], opts['-f'])
+            if opts['--report']:
+                print(opts['--report'].format(**locals()))
         if opts['sync']:
             if opts['-m']:
                 print("*** WARNING: sync -m is deprecated.")

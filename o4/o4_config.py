@@ -2,6 +2,13 @@ import sys
 import os
 import configparser
 
+# When included on a request to the fstat server, this parameter results in a
+# redirection to an existing file (rather than creating one) if it's this close
+# to an existing one.
+# The more sparse is your submitted changelist sequence, the larger the default
+# should be.
+NEARBY = 5000
+
 
 def init():
 
@@ -10,9 +17,9 @@ def init():
         lines = [line for line in lines if line and not line.startswith('#')]
         bad = [line for line in lines if '=' not in line]
         if bad:
-            print('*** WARNING: Ignoring these lines in ' + filename)
-            for line in bad:
-                print('    ' + line)
+            print(f'*** WARNING: Ignoring these lines in {filename}', file=sys.stderr)
+            bad = ['             ' + line for line in bad]
+            print(*bad, sep='\n', file=sys.stderr)
             lines = [line for line in lines if '=' in line]
         return '\n'.join(lines) + '\n'
 
@@ -34,7 +41,7 @@ def init():
         exit(f'Error reading o4 configuration: {e}')
 
     if not conf:
-        exit(f'No o4 configuration file found')
+        return {}
 
     c = configparser.ConfigParser(strict=False, interpolation=None)
     c.read_string('[DEFAULT]\n' + conf)
@@ -57,14 +64,36 @@ def p4():
     }
 
 
+def cmdline_args(o4_cmd):
+    import shlex
+
+    args = []
+    if o4_cmd:
+        a = props.get(f'o4.args.{o4_cmd}')
+        if a:
+            args.extend(shlex.split(a))
+    a = props.get('o4.args')
+    if a:
+        args.extend(shlex.split(a))
+    return args
+
+
 def allow_nonflat_clientspec():
-    x = props.get('o4.allow_nonflat_clientspec', False)
-    if x:
-        return x == 'true'
-    x = props.get('blt.edition.dev')
-    if x:
-        return x == 'false'
+    allow = props.get('o4.allow_nonflat_clientspec', False)
+    if allow:
+        return allow == 'true'
+    allow = props.get('blt.edition.dev')
+    if allow:
+        return allow == 'false'
     return False
+
+
+def fstat_server():
+    return props.get('o4.fstat_server_url', None)
+
+
+def fstat_server_nearby():
+    return int(props.get('o4.fstat_server.nearby', NEARBY))
 
 
 ##

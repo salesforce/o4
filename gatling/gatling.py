@@ -1,38 +1,44 @@
 #!/usr/bin/python3.6
 """
-Distributes stdin to multiple child processes executing in parallel. The child
-processes are described by <args>. The output and stderr from each child is
-collated and output as one stream without priority to any one process, and
-without clipping or mashing together lines from different children.
+Distributes stdin to multiple child processes executing in
+parallel. The child processes are described by <args>. The output and
+stderr from each child is collated and output as one stream without
+priority to any one process, and without clipping or mashing together
+lines from different children.
 
 The <args>... arguments specifies how to launch the child processes.
 
-This program has two different modes determined by the name with which is invoked
-or by an optional first argument (gatling|manifold):
- * gatling: best for commands that communicate with remote servers (e.g. p4)
- * manifold: best commands that consume mainly local resources (e.g. md5)
+This program has two different modes determined by the name with which
+is invoked or by an optional first argument (gatling|manifold):
 
-In manifold mode a child process is created for each block read, until max <procs>
-is reached, after that blocks are forwarded to the child processes round-robin.
-When a child has received <max> bytes it is not given more and much finish to make
-room for a new child process to be launched.
+ * gatling: best for commands that communicate with remote servers
+   (e.g. p4)
 
-In gatling mode one child process is created and blocks are forwarded until <max>
-bytes is reached. Not until a child is saturated, is another child processes
-created and filled up. As long as there is more input new child processes are
-created until max <procs> is reached. At this point one child must finish to make
-room for a new child so that more blocks can be forwarded.
+ * manifold: best for commands that consume mainly local resources 
+   (e.g. md5)
+
+In manifold mode a child process is created for each block read, until
+max <procs> is reached, after that blocks are forwarded to the child
+processes round-robin. When a child has received <max> bytes it is not
+given more and must finish to make room for a new child process to be
+launched.
+
+In gatling mode one child process is created and blocks are forwarded
+until <max> bytes is reached. Not until a child is saturated, is
+another child processes created and filled up. As long as there is
+more input new child processes are created until max <procs> is
+reached. At this point one child must finish to make room for a new
+child so that more blocks can be forwarded.
 
 Usage:
   {PROGRAM} [(gatling|manifold)] [-c <bytes>] [-n <procs>] [-m <max>] [-v] [--] <args>...
 
 Options:
-  (gatling|manifold)  Override automatic behavior detection.
+  (gatling|manifold)  Override automatic behavior detection. Has to be first argument.
   -n <procs>  Maximum number of subprocesses to launch running "<args>" [default: #cpu]
   -m <max>    Maximum bytes to pass to each subprocess [default: 1048576]
   -c <bytes>  Input reading chunk size in bytes [default: 4096]
   -v          Be verbose.
-
 """
 import sys
 import os
@@ -40,6 +46,73 @@ from signal import SIGINT
 
 
 def distribute(cmd, max_bytes, max_procs, chunk_size, round_robin, verbose):
+    """
+    Blocking function that manages all the delegation of chunks from
+    stdin to subprocesses, spawning of subprocess, and collation of
+    stdout and stderr from each subprocess.
+
+    Broadly speaking, gatling reads chunks of data from stdin and
+    disperses those among subprocesses to achieve parallel execution.
+
+    Stdin is read in chunks of chunk_size bytes and truncated to the
+    last newline, keeping the remainder to be prepended on the next
+    chunk. Multiple chunks without newline is allowed, nothing is
+    passed on until a newline is found or stdin closes.
+
+    The stdout and stderr from each child is read in a similar
+    fashion. Whenever a newline is found the output is written onto
+    stdout or stderr, respectively. This collation preserves the
+    format of the output, but only weakly adheres to the chronology.
+    The output from gatling is the result of the subprocesses with a
+    line-by-line integrity preserved with no guarantee that the order
+    is exactly maintained.
+
+    There are two different behaviors for subprocess spawning,
+    manifold or gatling:
+
+    * In manifold-mode each new chunk read from stdin spawns a new
+      subprocess until max_procs is reached and then each of the
+      subprocesses are fed a chunk in round robin fashion. This is an
+      excellent model for programs that do not tax an external
+      resource and programs that can act on stdin as soon as it is
+      available.
+
+    * In gatling-mode chunks are fed to a single subprocess until that
+      processes' max_bytes is reached, the subprocess' stdin is closed
+      and on the next chunk a new subprocess is spawned and fed until
+      its max_bytes is reached and so on until max_procs is reached.
+      If max_procs is reached gatling is blocked until a subprocess
+      finishes. This mode works well for programs that connect to an
+      external service or programs that don't start processing stdin
+      until it is closed.
+
+    cmd (list): The full command line for spawning subprocesses.
+
+    max_bytes (int): Maximum bytes to pass to each subprocess before
+        closing the subprocess' stdin. Increase this value if
+        subprocesses do not have memory management problems from large
+        input and if subprocesses process stdin as stream. Decrease
+        this value if programs can not handle a large input set on
+        stdin or if programs do not start processing until stdin is
+        closed.
+
+    max_procs (int): Maximum number of simultaneos subprocesses.
+        Increase this number if the subprocess is largely CPU bound,
+        decrease it to match the hardware if the subprocesses are IO
+        bound.
+
+    chunk_size (int): Stdin content streamed to gatling is consumed in
+        chunks of this size (bytes) for efficiency reasons. Originally
+        it was line by line, but that was too slow to keep
+        subprocesses fed continuously. To force line-by-line behavior,
+        set chunk to a size always less than the length of an input
+        line (worst case 1, but try to keep it as high as possible).
+        Experiment with this number to maximize pipeline throughput.
+
+    round_robin (bool): True is manifold, false is gatling, see above
+        for details.
+    """
+
     from sys import stdin, stdout, stderr
     from subprocess import Popen, PIPE
     from time import sleep, time
@@ -66,6 +139,8 @@ def distribute(cmd, max_bytes, max_procs, chunk_size, round_robin, verbose):
                         n += fileobj._trg.write(fileobj._buf)
                         selector.unregister(fileobj)
             not_done[0] = n
+
+    my_name = 'manifold' if round_robin else 'gatling'
 
     selector = DefaultSelector()
     res = []
@@ -173,19 +248,24 @@ def distribute(cmd, max_bytes, max_procs, chunk_size, round_robin, verbose):
     return res
 
 
-def cli():
+def main():
+    """
+    Parses the CLI using docopt. See the file docstring for details.
+    """
+
     from docopt import docopt
     from multiprocessing import cpu_count
 
-    global my_name
     args = sys.argv[1:]
-    if args and args[0] in ('gatling', 'manifold'):
-        my_name = args.pop(0)
-    else:
-        my_name = os.path.basename(sys.argv[0])
 
+    # Determine my_name from the invoked name (zeroth argument) or
+    # the first argument if it is gatling or manifold.
+    my_name, _ = os.path.splitext(os.path.basename(sys.argv[0]))
     if '--' not in args:
         for i, arg in enumerate(args):
+            if not i and arg in ('gatling', 'manifold'):
+                my_name = arg
+                continue
             if not arg.startswith('-'):
                 try:
                     int(arg)
@@ -193,20 +273,18 @@ def cli():
                     args.insert(i, '--')
                     break
     opts = docopt(__doc__.replace('{PROGRAM}', my_name), args)
+    if not opts['gatling'] and not opts['manifold']:
+        opts['manifold'] = my_name.startswith('manifold')
     if opts['-n'] == '#cpu':
         opts['-n'] = cpu_count()
     else:
-        opts['-n'] = min(int(opts['-n']), cpu_count())
+        opts['-n'] = int(opts['-n'])
     opts['-c'] = int(opts['-c'])
     opts['-m'] = int(opts['-m'])
-    return opts
 
-
-def main():
-    opts = cli()
     try:
-        res = distribute(opts['<args>'], opts['-m'], opts['-n'], opts['-c'],
-                         my_name.startswith('manifold'), opts['-v'])
+        res = distribute(opts['<args>'], opts['-m'], opts['-n'], opts['-c'], opts['manifold'],
+                         opts['-v'])
         errs = [r for r in res if r]
         if errs:
             sys.exit(f"*** ERROR: There were {len(errs)} errors out of {len(res)} processes.")

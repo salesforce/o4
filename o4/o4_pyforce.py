@@ -1,5 +1,6 @@
 #!/usr/bin/env python3.6
-""" Wrappers for the p4 binary.
+"""
+Wrappers for the p4 binary.
 """
 
 import os
@@ -9,22 +10,26 @@ import pickle
 
 
 class P4Error(Exception):
-    """Raised when there is an error in the p4 result"""
+    '''Raised when there is an error in the p4 result'''
 
 
 class P4TimeoutError(Exception):
-    """Raised when a p4 command times out"""
+    '''Raised when a p4 command times out'''
 
 
 class Pyforce(object):
 
     def __init__(self, *args):
+        """
+        Create an iterator over results of a p4 call. The args here are p4
+        CLI arguments. See p4 help for more information.
+        """
         self.args = [str(arg) for arg in args]
         from subprocess import Popen, PIPE
         from tempfile import NamedTemporaryFile
         self.stderr = NamedTemporaryFile()
         if os.environ.get('DEBUG', ''):
-            print(f"## p4", *self.args, file=sys.stderr)
+            print(f'## p4', *self.args, file=sys.stderr)
         self.pope = Popen(
             ['p4', '-vnet.maxwait=60', '-G'] + self.args, stdout=PIPE, stderr=self.stderr)
         self.transform = Pyforce.to_str
@@ -34,6 +39,18 @@ class Pyforce(object):
         return self
 
     def __next__(self):
+        """
+        Returns the next p4 result object from the command. If the p4
+        command experiences a timeout, raise P4TimeoutError. All other
+        errors are accumulated during the run and raised as arguments
+        on a single P4Error object after the p4 process has been
+        exhausted.
+
+        Certain errors are not really errors, it's just p4 being
+        silly. Such as the error "No files to reconcile" when you
+        reconcile files that have the correct content. Such errors are
+        converted to code=stat and passed on.
+        """
         import marshal
         try:
             while True:
@@ -45,6 +62,8 @@ class Pyforce(object):
                 if res.get(b'code') != b'error':
                     return self.transform(res)
                 if b'data' in res:
+                    if b'no such file' in res[b'data']:
+                        raise StopIteration('Empty changelist range')
                     if (b'file(s) up-to-date' in res[b'data'] or
                             b'no file(s) to reconcile' in res[b'data'] or
                             b'no file(s) to resolve' in res[b'data'] or
@@ -58,7 +77,9 @@ class Pyforce(object):
                     elif b'clobber writable file' in res[b'data']:
                         res[b'code'] = b'error'
                     # {b'code': b'error', b'data': b'SSL receive failed.\nread: Connection timed out: Connection timed out\n', b'severity': 3, b'generic': 38}
-                    elif b'Connection timed out' in res[b'data']:
+                    # 'data': 'TCP receive exceeded maximum configured duration of 60 seconds.\n', 'severity': 3, 'generic': 38
+                    # This seems like it could be 100 different messages; we probably need #TODO find out what generic means.
+                    elif b'Connection timed out' in res[b'data'] or b'TCP receive exceeded' in res[b'data']:
                         raise P4TimeoutError(res, self.args)
                     if res[b'code'] != b'error':
                         return self.transform(res)
@@ -71,7 +92,12 @@ class Pyforce(object):
             err = self.stderr.read().decode(sys.stdout.encoding)
             if 'timed out' in err:
                 raise P4TimeoutError(err)
-            self.errors.append(f'stderr: {err}')
+            self.errors.append({
+                'code': 'error',
+                'data': f'stderr: {err}',
+                'severity': 3,
+                'generic': 38
+            })
         if self.errors:
             raise P4Error(*self.errors)
         raise StopIteration()
@@ -86,6 +112,10 @@ class Pyforce(object):
 
     @staticmethod
     def to_str(r):
+        """
+        Converts a dictionary of bytes key-values to strings using stdout
+        encoding.
+        """
 
         def dec(a):
             if hasattr(a, 'decode'):
@@ -96,14 +126,24 @@ class Pyforce(object):
 
     @staticmethod
     def unescape(path):
+        """Reverts p4 path escaping."""
         return path.replace('%40', '@').replace('%23', '#').replace('%2a', '*').replace('%25', '%')
 
     @staticmethod
     def escape(path):
+        """Escapes a path like perforce would."""
         return path.replace('%', '%25').replace('#', '%23').replace('*', '%2a').replace('@', '%40')
 
     @staticmethod
     def checksum(fname, headType, fileSize=0):
+        """
+        Probably the only complete resource to how perforce computes a
+        checksum. Fundamentally it's a MD5 checksum of the file's
+        content. However utf16 files must first be converted to utf8,
+        and if the file system file size is 3 bytes larger than the
+        stated file size, then if those three bytes are the utf8 BOM,
+        they must not be included in the checksum.
+        """
         import hashlib
         hash_md5 = hashlib.md5()
         try:
@@ -147,19 +187,18 @@ def _cache_get(cmd, max_age=24 * 3600):
         if time.time() - st.st_ctime > max_age:
             os.unlink(cname)
         else:
-
             with open(cname, 'rb') as fin:
                 res = pickle.load(fin).get(os.environ['P4CLIENT'], None)
                 if res:
-                    print(f"*** INFO: Using cached result for {cmd} from {cname}", file=sys.stderr)
+                    print(f'*** INFO: Using cached result for {cmd} from {cname}', file=sys.stderr)
                 return res
-    except (pickle.UnpicklingError, FileNotFoundError):
+    except (pickle.UnpicklingError, FileNotFoundError, EOFError):
         pass
 
 
 def _cache_put(cmd, pyf):
     cname = os.path.expanduser('~/.o4/.' + cmd)
-    print(f"*** INFO: Caching result for {cmd} into {cname}", file=sys.stderr)
+    print(f'*** INFO: Caching result for {cmd} into {cname}', file=sys.stderr)
     os.makedirs(os.path.dirname(cname), exist_ok=True)
     with open(cname, 'wb') as fout:
         res = list(pyf)
@@ -168,6 +207,9 @@ def _cache_put(cmd, pyf):
 
 
 def info():
+    """
+    Returns the server info. Reply is cached for future reference.
+    """
     res = _cache_get('info')
     if not res:
         res = _cache_put('info', Pyforce('info'))
@@ -175,13 +217,31 @@ def info():
 
 
 def client():
+    """
+    Returns the clientspec object. Reply is cached for future
+    reference.
+    """
     res = _cache_get('client')
     if not res:
         res = _cache_put('client', Pyforce('client', '-o'))
     return res[0]
 
 
+def clear_cache(cmd):
+    '''Remove the cached copy of the "cmd" data.
+       Returns True if there was a cache, False otherwise.
+    '''
+    try:
+        cname = os.path.expanduser(f'~/.o4/.{cmd}')
+        os.remove(cname)
+        print(f'*** INFO: Removed cached result for {cmd}')
+        return True
+    except:
+        return False
+
+
 def head(depot_path):
+    """Returns the head changelist of depot_path."""
     if not depot_path.endswith('/...'):
         depot_path += '/...'
     return int(

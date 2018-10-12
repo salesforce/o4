@@ -1,6 +1,16 @@
+"""
+Very primitive method for giving some indication of progress when
+the o4 command is long running. It's not fail safe. Sometimes a few
+small files are synced first and then no update while downloading a
+few very large files.
+
+Output is written directly to the TTY so it's neither stderr or
+stdout.
+"""
 import os
 import sys
 
+# ANSI sequence to clear a line and carriage return
 CLR = '%c[2K\r' % chr(27)
 
 
@@ -25,16 +35,25 @@ class TTY(object):
 
 
 def swap_filename(path, replacement='.fstat'):
+    """Replaces the basename in path with replacement."""
     if not os.path.isdir(path):
         path = os.path.dirname(path)
     return os.path.join(path, replacement)
 
 
 def progress_enabled():
+    """
+    Checks if progress is enabled. To disable:
+        export O4_PROGRESS=false
+    """
     return os.environ.get('O4_PROGRESS', 'true') == 'true'
 
 
 def progress_iter(it, path, desc, delay=0.5, delta=500):
+    """
+    Use this to wrap an iterator you would like to present progress
+    for.
+    """
     if not progress_enabled():
         return it
     with open(swap_filename(path), 'wt') as pout:

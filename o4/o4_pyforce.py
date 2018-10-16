@@ -79,8 +79,7 @@ class Pyforce(object):
                     # {b'code': b'error', b'data': b'SSL receive failed.\nread: Connection timed out: Connection timed out\n', b'severity': 3, b'generic': 38}
                     # 'data': 'TCP receive exceeded maximum configured duration of 60 seconds.\n', 'severity': 3, 'generic': 38
                     # This seems like it could be 100 different messages; we probably need #TODO find out what generic means.
-                    elif b'Connection timed out' in res[b'data'] or b'TCP receive exceeded' in res[
-                            b'data']:
+                    elif b'Connection timed out' in res[b'data'] or b'TCP receive exceeded' in res[b'data']:
                         raise P4TimeoutError(res, self.args)
                     if res[b'code'] != b'error':
                         return self.transform(res)
@@ -136,7 +135,7 @@ class Pyforce(object):
         return path.replace('%', '%25').replace('#', '%23').replace('*', '%2a').replace('@', '%40')
 
     @staticmethod
-    def checksum(fname, headType, fileSize=0):
+    def checksum(fname, fileSize):
         """
         Probably the only complete resource to how perforce computes a
         checksum. Fundamentally it's a MD5 checksum of the file's
@@ -144,9 +143,17 @@ class Pyforce(object):
         and if the file system file size is 3 bytes larger than the
         stated file size, then if those three bytes are the utf8 BOM,
         they must not be included in the checksum.
+
+        Hence the fileSize argument can be an integer, or in the case
+        of utf8 files <int>/utf8, and in the utf16 case <int>/utf16.
         """
         import hashlib
         hash_md5 = hashlib.md5()
+        headType = ''
+        if type(fileSize) != int:
+            if '/' in fileSize:
+                fileSize, headType = fileSize.split('/', 1)
+            fileSize = int(fileSize)
         try:
             with open(fname, 'rb') as f:
                 if headType == 'utf16':

@@ -32,9 +32,11 @@ stored in `.o4` folder in the target directory.
 target trees is not supported. Some mapping works, but it is generally
 discouraged.
 
-3. Python3.6 or higher. `o4` source code makes use of f-strings.
+3. Newlines in filenames are not supported.
 
-4. o4 is available only on Linux or macOS.
+4. Python3.6 or higher. `o4` source code makes use of f-strings.
+
+5. o4 is available only on Linux or macOS.
 
 ## What about my...
 

@@ -78,8 +78,8 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from o4_pyforce import Pyforce, P4Error, P4TimeoutError, info as pyforce_info, \
     client as pyforce_client, clear_cache
-from o4_fstat import fstat_from_csv, fstat_iter, fstat_cl_path, fstat_split, get_fstat_cache, \
-    F_REVISION, F_FILE_SIZE, F_LAST_ACTION, F_FILE_TYPE, F_CHECKSUM, F_PATH
+from o4_fstat import fstat_from_csv, fstat_iter, fstat_path, \
+    fstat_split, fstat_join, get_fstat_cache, F_REVISION, F_FILE_SIZE, F_CHECKSUM, F_PATH
 from o4_progress import progress_iter, progress_show, progress_enabled
 from o4_utils import chdir, consume
 
@@ -135,14 +135,16 @@ def o4_seed_from(seed_dir, seed_fstat, op):
 
     seed_checksum = None
     if seed_fstat:
-        seed_checksum = {f[F_PATH]: f[F_CHECKSUM] for f in fstat_from_csv(seed_fstat) if f}
+        seed_checksum = {
+            f[F_PATH]: f[F_CHECKSUM] for f in fstat_from_csv(seed_fstat, fstat_split) if f
+        }
     target_dir = os.getcwd()
     with chdir(seed_dir):
         for line in sys.stdin:
             f = fstat_split(line)
             if not f:
                 continue
-            if f[F_LAST_ACTION].endswith('delete'):
+            if not f[F_CHECKSUM]:  # File is deleted
                 continue
             dest = os.path.join(target_dir, f[F_PATH])
             if os.path.lexists(dest):
@@ -155,13 +157,12 @@ def o4_seed_from(seed_dir, seed_fstat, op):
                     else:
                         raise
             copyit = False
-            if f[F_FILE_TYPE] == 'symlink':
+            if f[F_FILE_SIZE].endswith('symlink'):
                 copyit = True
             elif seed_fstat:
                 copyit = seed_checksum.get(f[F_PATH]) == f[F_CHECKSUM]
             else:
-                copyit = f[F_CHECKSUM] == Pyforce.checksum(f[F_PATH], f[F_FILE_TYPE],
-                                                           int(f[F_FILE_SIZE]))
+                copyit = f[F_CHECKSUM] == Pyforce.checksum(f[F_PATH], f[F_FILE_SIZE])
             if not copyit:
                 print(line, end='')  # line already ends with '\n'
                 continue
@@ -254,11 +255,11 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
     if previous_cl and previous_cl > changelist:
         # Syncing backwards requires us to delete files that were added between the lower and
         # higher changelist. All other files must be synced to their state at the lower changelist
-        past_filenames = set(r[1] for r in map(
-            fstat_cl_path,
+        past_filenames = set(p for p, _ in map(
+            fstat_path,
             progress_iter(
                 fstat_iter(_depot_path(), changelist),
-                os.getcwd() + '/.o4/.fstat', 'fstat-reverse')) if r[1])
+                os.getcwd() + '/.o4/.fstat', 'fstat-reverse')) if p)
         if not keep:
             keep = set()
         if not drop:
@@ -271,7 +272,7 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
             if not f:
                 continue
             if f[F_PATH] not in past_filenames:
-                print(f'{changelist},0,0,reverse_sync/delete,text,,{f[F_PATH]}')
+                print(f'{changelist},{f[F_PATH]},0,0,')
                 if force:
                     drop.add(f[F_PATH])
             elif not force:
@@ -293,11 +294,16 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
         drop = None
     if not keep:
         keep = None
-    for line in progress_iter(
-            fstat_iter(_depot_path(), changelist, previous_cl),
-            os.getcwd() + '/.o4/.fstat', 'fstat'):
+
+    fstats = progress_iter(
+        fstat_iter(_depot_path(), changelist, previous_cl),
+        os.getcwd() + '/.o4/.fstat', 'fstat')
+    # Can't break out of fstat_iter without risking that the local
+    # cache is not created, causing fstat_from_perforce to be called
+    # twice, so we use an iterator that we can drain.
+    for line in fstats:
         if keep is not None or drop is not None:
-            _, path, _ = fstat_cl_path(line)
+            path, line = fstat_path(line)
             if not path:
                 continue
             if drop is not None:
@@ -314,6 +320,9 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
                 keep_n -= 1
                 if not keep_n:
                     print(line)
+                    # Make sure the iterator is consumed, so that
+                    # local cache is created.
+                    sum(0 for line in fstats)
                     break
         print(line)
     actual_cl, fname = get_fstat_cache(changelist)
@@ -352,7 +361,7 @@ def o4_drop_have(verbose=False):
         needle = f"{Pyforce.escape(f[F_PATH])}#{f[F_REVISION]} -"
         i = bisect_left(have, needle)
         miss = (i == len(have)) or not have[i].startswith(needle)
-        if miss and not f[F_LAST_ACTION].endswith('delete'):
+        if miss and f[F_CHECKSUM]:
             print(line)
     if verbose:
         t0, t1 = time.time(), t0
@@ -401,19 +410,19 @@ def o4_filter(filtertype, filters):
             return row
 
     def f_exist(row):
-        if os.path.lexists(row[F_PATH]) != row[F_LAST_ACTION].endswith('delete'):
+        if os.path.lexists(row[F_PATH]) != (row[F_CHECKSUM] == ''):  # File is deleted
             return row
 
     def f_checksum(row):
         if os.path.lexists(row[F_PATH]):
-            if row[F_LAST_ACTION].endswith('delete'):
+            if not row[F_CHECKSUM]:  # File is deleted
                 if os.path.isdir(row[F_PATH]):
                     return row
-            elif row[F_FILE_TYPE] == 'symlink' or Pyforce.checksum(
-                    row[F_PATH], row[F_FILE_TYPE], int(row[F_FILE_SIZE])) == row[F_CHECKSUM]:
+            elif row[F_FILE_SIZE].endswith('symlink') or Pyforce.checksum(
+                    row[F_PATH], row[F_FILE_SIZE]) == row[F_CHECKSUM]:
                 return row
         else:
-            if row[F_LAST_ACTION].endswith('delete'):
+            if not row[F_CHECKSUM]:
                 return row
 
     verbose = False
@@ -432,7 +441,7 @@ def o4_filter(filtertype, filters):
         return False
 
     def pp(row):
-        print(','.join(row))
+        print(fstat_join(row))
         return True
 
     if filtertype == 'drop':
@@ -528,7 +537,7 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
                         repeats[f[F_PATH]].append(res)
                         fstat = fstats.pop(i)
                         if not quiet:
-                            print(','.join(fstat))
+                            print(fstat_join(fstat))
                         break
                 else:
                     for f in repeats.keys():
@@ -908,7 +917,7 @@ def o4_fail():
         if len(files) != n:
             err_print(f"  ...and {n-len(files)} others!")
         err_print(dash)
-        sys.exit(f"{CLR}*** ERROR: Pipeline ended with {n} fstat lines.\n")
+        sys.exit(f"{CLR}*** ERROR: Pipeline ended with {n} fstat lines.")
 
 
 def o4_head(paths):
@@ -1041,9 +1050,9 @@ def main():
         print_exc(file=sys.stderr)
         print(f'*** ERROR: {e}', file=sys.stderr)
         ec = 1
-    finally:
-        if ran:
-            sys.exit(ec)
+
+    if ran or ec:
+        sys.exit(ec)
 
     if opts['head']:
         o4_head(map(depot_abs_path, opts['<paths>']))

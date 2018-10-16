@@ -23,10 +23,10 @@ the `o4` fstat server.
 
 # CI optimizations
 
-Continuous integration (CI) often has a very adverse usage
-pattern. Perforce is designed for clientspecs as the key to the
-have-list and files are synced incrementally. Extending over and over
-from the previous position.
+Continuous integration (CI) often has a very adverse usage pattern.
+Perforce is designed for clientspecs as the key to the have-list and
+files are synced incrementally. Extending over and over from the
+previous position.
 
 CI is usually the opposite. Create a clientspec, flush, sync out the
 few files that are different from the snapshot or what was baked in
@@ -100,11 +100,11 @@ into the tarball.
 
 # Server-client protocol
 
-The client determines what is needed to reach the target
-changelist. It starts with the local file cache, adds anything that's
-missing from the fstat server. If the fstat server redirects to a
-different changelist, the client will fill the difference between the
-fstat redirect changelist and the target from perforce.
+The client determines what is needed to reach the target changelist.
+It starts with the local file cache, adds anything that's missing from
+the fstat server. If the fstat server redirects to a different
+changelist, the client will fill the difference between the fstat
+redirect changelist and the target from perforce.
 
 The server may redirect to a different changelist as long as the new
 changelist is less than the demanded target changelist.

@@ -295,10 +295,9 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
     if not keep:
         keep = None
 
-    fstats = iter(
-        progress_iter(
-            fstat_iter(_depot_path(), changelist, previous_cl),
-            os.getcwd() + '/.o4/.fstat', 'fstat'))
+    fstats = progress_iter(
+        fstat_iter(_depot_path(), changelist, previous_cl),
+        os.getcwd() + '/.o4/.fstat', 'fstat')
     # Can't break out of fstat_iter without risking that the local
     # cache is not created, causing fstat_from_perforce to be called
     # twice, so we use an iterator that we can drain.
@@ -325,7 +324,6 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
                     # local cache is created.
                     sum(0 for line in fstats)
                     break
-
         print(line)
     actual_cl, fname = get_fstat_cache(changelist)
     return actual_cl
@@ -654,7 +652,8 @@ def o4_sync(changelist,
         client = pyforce_client()
         cname = client['Client']
         view = [
-            v[1:].split(' //' + cname) for k, v in client.items()
+            v[1:].split(' //' + cname)
+            for k, v in client.items()
             if k.startswith('View') and not v.startswith('-//')
         ]
 
@@ -878,7 +877,8 @@ def o4_clean(changelist, quick=False, resume=False, discard=False):
         dep = _depot_path().replace('/...', '')
         p4open = [
             Pyforce.unescape(p['depotFile'])[len(dep) + 1:]
-            for p in Pyforce('opened', dep + '/...') if 'delete' not in p['action']
+            for p in Pyforce('opened', dep + '/...')
+            if 'delete' not in p['action']
         ]
         print(f"*** INFO: Not cleaning {len(p4open)} files opened for edit.")
         for of in p4open:
@@ -917,7 +917,7 @@ def o4_fail():
         if len(files) != n:
             err_print(f"  ...and {n-len(files)} others!")
         err_print(dash)
-        sys.exit(f"{CLR}*** ERROR: Pipeline ended with {n} fstat lines.\n")
+        sys.exit(f"{CLR}*** ERROR: Pipeline ended with {n} fstat lines.")
 
 
 def o4_head(paths):
@@ -987,8 +987,8 @@ def parallel_fstat(opts):
             print(p, file=sin)
         sin.seek(0, 0)
         # Makes the assumption that no path is less than 4 bytes:
-        return check_call(
-            ['manifold', '-c', '4', '--', 'xargs', '-n1', 'o4', 'fstat', '-q'], stdin=sin)
+        return check_call(['manifold', '-c', '4', '--', 'xargs', '-n1', 'o4', 'fstat', '-q'],
+                          stdin=sin)
 
 
 def add_implicit_args(args):
@@ -1050,9 +1050,9 @@ def main():
         print_exc(file=sys.stderr)
         print(f'*** ERROR: {e}', file=sys.stderr)
         ec = 1
-    finally:
-        if ran:
-            sys.exit(ec)
+
+    if ran or ec:
+        sys.exit(ec)
 
     if opts['head']:
         o4_head(map(depot_abs_path, opts['<paths>']))

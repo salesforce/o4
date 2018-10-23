@@ -86,8 +86,8 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from o4_pyforce import Pyforce, P4Error, P4TimeoutError, info as pyforce_info, \
     client as pyforce_client, clear_cache
-from o4_fstat import fstat_from_csv, fstat_iter, fstat_cl_path, fstat_split, get_fstat_cache, \
-    F_REVISION, F_FILE_SIZE, F_LAST_ACTION, F_FILE_TYPE, F_CHECKSUM, F_PATH
+from o4_fstat import fstat_from_csv, fstat_iter, fstat_path, \
+    fstat_split, fstat_join, get_fstat_cache, F_REVISION, F_FILE_SIZE, F_CHECKSUM, F_PATH
 from o4_progress import progress_iter, progress_show, progress_enabled
 from o4_utils import chdir, consume, o4_log, caseful_accurate
 
@@ -150,7 +150,9 @@ def o4_seed_from(seed_dir, seed_fstat, op):
 
     seed_checksum = None
     if seed_fstat:
-        seed_checksum = {f[F_PATH]: f[F_CHECKSUM] for f in fstat_from_csv(seed_fstat) if f}
+        seed_checksum = {
+            f[F_PATH]: f[F_CHECKSUM] for f in fstat_from_csv(seed_fstat, fstat_split) if f
+        }
     target_dir = os.getcwd()
     with chdir(seed_dir):
         for line in sys.stdin:
@@ -172,7 +174,7 @@ def o4_seed_from(seed_dir, seed_fstat, op):
                     checksum = seed_checksum.get(f[F_PATH])
                 else:
                     checksum = Pyforce.checksum(f[F_PATH], f[F_FILE_TYPE], int(f[F_FILE_SIZE]))
-                if f[F_FILE_TYPE] == 'symlink' or checksum == f[F_CHECKSUM]:
+                if f[F_FILE_SIZE].endswith('symlink') or checksum == f[F_CHECKSUM]:
                     update_target(f[F_PATH], dest, fsop)
             print(line, end='')  # line already ends with '\n'
 
@@ -262,11 +264,11 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
     if previous_cl and previous_cl > changelist:
         # Syncing backwards requires us to delete files that were added between the lower and
         # higher changelist. All other files must be synced to their state at the lower changelist
-        past_filenames = set(r[1] for r in map(
-            fstat_cl_path,
+        past_filenames = set(p for p, _ in map(
+            fstat_path,
             progress_iter(
                 fstat_iter(_depot_path(), changelist),
-                os.getcwd() + '/.o4/.fstat', 'fstat-reverse')) if r[1])
+                os.getcwd() + '/.o4/.fstat', 'fstat-reverse')) if p)
         if not keep:
             keep = set()
         if not drop:
@@ -279,7 +281,7 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
             if not f:
                 continue
             if f[F_PATH] not in past_filenames:
-                print(f'{changelist},0,0,reverse_sync/delete,text,,{f[F_PATH]}')
+                print(f'{changelist},{f[F_PATH]},0,0,')
                 if force:
                     drop.add(f[F_PATH])
             elif not force:
@@ -320,7 +322,7 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
     # twice, so we use an iterator that we can drain.
     for line in fstats:
         if keep is not None or drop is not None:
-            _, path, _ = fstat_cl_path(line)
+            path, line = fstat_path(line)
             if not path:
                 continue
             if drop is not None:
@@ -378,7 +380,7 @@ def o4_drop_have(verbose=False):
         needle = f"{Pyforce.escape(f[F_PATH])}#{f[F_REVISION]} -"
         i = bisect_left(have, needle)
         miss = (i == len(have)) or not have[i].startswith(needle)
-        if miss and not f[F_LAST_ACTION].endswith('delete'):
+        if miss and f[F_CHECKSUM]:
             print(line)
     if verbose:
         t0, t1 = time.time(), t0
@@ -420,10 +422,10 @@ def o4_filter(filtertype, filters, verbose):
 
     def f_checksum(row):
         if os.path.lexists(row[F_PATH]):
-            if row[F_LAST_ACTION].endswith('delete'):
+            if not row[F_CHECKSUM]:  # File is deleted
                 if os.path.isdir(row[F_PATH]):
                     return True
-            elif row[F_FILE_TYPE] == 'symlink' or Pyforce.checksum(
+            elif row[F_FILE_SIZE].endswith('symlink') or Pyforce.checksum(
                     row[F_PATH], row[F_FILE_TYPE], int(row[F_FILE_SIZE])) == row[F_CHECKSUM]:
                 return True
         else:
@@ -604,7 +606,7 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
                     # Printing the fstats after the p4 process has ended, because p4 marshals
                     # its objects before operation, as in "And for my next act... !"
                     # This premature printing leads to false checksum errors during sync.
-                    print(','.join(fstat))
+                    print(fstat_join(fstat))
 
 
 def o4_sync(changelist,
@@ -710,7 +712,7 @@ def o4_sync(changelist,
         except CalledProcessError:
             cwd = os.getcwd()
             with open('.o4-pipefails') as f:
-                fails = f.readline().strip().split()[1:-1]
+                fails = f.readline().rstrip().split()[1:]
                 os.remove('.o4-pipefails')
             cmd = cmd.split('|')
             msg = [f"{CLR}*** ERROR: Pipeline failed in {cwd}:"]
@@ -995,7 +997,10 @@ def o4_head(paths):
     for retry in range(3):
         try:
             end = '' if len(args) > 1 else args[0]
-            print(f"# {CLR}*** INFO: ({retry+1}/3) Retrieving HEAD changelist for", end)
+            print(
+                f"# {CLR}*** INFO: ({retry+1}/3) Retrieving HEAD changelist for",
+                end,
+                file=sys.stderr)
             if not end:
                 for path in args:
                     print(f"      {path}")

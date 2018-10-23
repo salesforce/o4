@@ -138,7 +138,7 @@ class Pyforce(object):
         return path.replace('%', '%25').replace('#', '%23').replace('*', '%2a').replace('@', '%40')
 
     @staticmethod
-    def checksum(fname, headType, fileSize=0):
+    def checksum(fname, fileSize):
         """
         Probably the only complete resource to how perforce computes a
         checksum. Fundamentally it's a MD5 checksum of the file's
@@ -146,9 +146,17 @@ class Pyforce(object):
         and if the file system file size is 3 bytes larger than the
         stated file size, then if those three bytes are the utf8 BOM,
         they must not be included in the checksum.
+
+        Hence the fileSize argument can be an integer, or in the case
+        of utf8 files <int>/utf8, and in the utf16 case <int>/utf16.
         """
         import hashlib
         hash_md5 = hashlib.md5()
+        headType = ''
+        if type(fileSize) != int:
+            if '/' in fileSize:
+                fileSize, headType = fileSize.split('/', 1)
+            fileSize = int(fileSize)
         try:
             with open(fname, 'rb') as f:
                 if headType == 'utf16':

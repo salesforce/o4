@@ -10,6 +10,6 @@ PRODUCT = 'o4/version.py'
 REQ_MD5 = '43a9b7190217ebf4434beeb068e7a833'
 PY_MD5 = '1cb3b19c6b35e46a20b631f1f56ab525'
 
-TIMESTAMP = datetime.datetime(2018, 10, 23, 0, 23, 29, 653219)
+TIMESTAMP = datetime.datetime(2018, 10, 23, 0, 26, 12, 495454)
 USER_NAME = 'Philip Bergen'
 USER_EMAIL = 'pbergen@salesforce.com'

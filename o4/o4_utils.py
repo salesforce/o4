@@ -80,6 +80,46 @@ class AtomicFile(object):
             os.remove(self.newfile.name)
 
 
+def caseful_accurate(fname, dirname_cache={}):
+    """
+    Verifies that fname is the true caseful path to fname according to
+    current file system state.
+    """
+
+    if sys.platform == 'darwin' and os.path.lexists(fname):
+        while fname != '.':
+            try:
+                dname, bname = fname.rsplit('/', 1)
+            except ValueError:
+                dname = '.'
+                bname = fname
+            dlist = dirname_cache.get(dname)
+            if not dlist:
+                dlist = os.listdir(dname)
+                dirname_cache[dname] = dlist
+            if bname not in dlist:
+                return False
+            fname = dname
+    return True
+
+
+def o4_log(operation, *args, **kw):
+    """
+    Simple logging function for each invocation. Not meant to log more
+    than one line per invoked command. Enables us to go back and study
+    the assumptions/preconditions at the time.
+    """
+    import time
+    with open(f'.o4/{operation}.log', 'at+') as fout:
+        print(
+            time.ctime(),
+            operation,
+            *[f'{k}={v}' for k, v in kw.items()],
+            *args,
+            sep='\t',
+            file=fout)
+
+
 ##
 # Copyright (c) 2018, salesforce.com, inc.
 # All rights reserved.

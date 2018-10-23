@@ -5,7 +5,7 @@ Usage:
   o4 clean <path> [-v] [-q] [--resume] [--discard]
   o4 fstat <paths>... [-q] [-f] [--changed <previous>] [--drop <fname>] [--keep <fname>] [--report <report>]
   o4 seed-from <dir> [--fstat <fstat>] [--move]
-  o4 (drop|keep) [--case] [--open] [--exist] [--checksum]
+  o4 (drop|keep|keep-any) [-v] [--case|--not-case] [--open|--not-open] [--existence|--not-existence] [--checksum|--not-checksum] [--deletes|--not-deletes]
   o4 drop --havelist
   o4 [-q] pyforce [--debug] [--no-rev] [--] <p4args>...
   o4 head <paths>...
@@ -35,13 +35,21 @@ Option:
   --fstat <fstat>  The path to the the fstat file, if any
   --move        Move the file from the seed directory rather than copy it
   drop          Forward fstat lines that don't satisfy any of the given filters
-  keep          Forward fstat lines that satisfy at least one of the given filters
-  --case        On the mac, with case insensitive filesystem, skip deleted files that exist with
-                different case, skip edited files that exist with a different case a different case
-  --open        Filter files that are open for edit.
-  --exist       Filter files that correctly exist (or are correctly absent) in the workspace.
-  --checksum    Filter files that have the correct checksum.
-  --havelist    Filter files that are at the revision that the "have" data says they should be.
+  keep          Forward fstat lines that satisfy every one of the given filters
+  keep-any      Forward fstat lines that satisfy at least one of the given filters
+  --case           Filter files whose filesystem path is identical, case and all, with the
+                   entry in the fstat stream. (On the mac, filesystem can be formatted case
+                   INsensitively). On Linux this is a no-op.
+  --not-case       Opposite of --case
+  --open           Filter files that are open for edit.
+  --not-open       Opposite of --open
+  --existence      Filter files that correctly exist (or are correctly absent) in the workspace.
+  --not-existence  Opposite of --existence
+  --checksum       Filter files that have the correct checksum.
+  --not-checksum   Opposite of --checksum
+  --deletes        Filter fstat lines that are deletes.
+  --not-deletes    Opposite of --deletes
+  --havelist       Filter files that are at the revision that the "have" data says they should be.
   -q            Skip second pass for sync, or for pyforce/fstat to be quiet.
   -f            Force all files to be verified and synced.
   +o            Do not sync open files.
@@ -78,10 +86,10 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from o4_pyforce import Pyforce, P4Error, P4TimeoutError, info as pyforce_info, \
     client as pyforce_client, clear_cache
-from o4_fstat import fstat_from_csv, fstat_iter, fstat_path, \
-    fstat_split, fstat_join, get_fstat_cache, F_REVISION, F_FILE_SIZE, F_CHECKSUM, F_PATH
+from o4_fstat import fstat_from_csv, fstat_iter, fstat_cl_path, fstat_split, get_fstat_cache, \
+    F_REVISION, F_FILE_SIZE, F_LAST_ACTION, F_FILE_TYPE, F_CHECKSUM, F_PATH
 from o4_progress import progress_iter, progress_show, progress_enabled
-from o4_utils import chdir, consume
+from o4_utils import chdir, consume, o4_log, caseful_accurate
 
 CLR = '%c[2K\r' % chr(27)
 
@@ -101,6 +109,11 @@ def find_o4bin():
 
 
 def _depot_path():
+    """
+    Returns the depot path of CWD. Result is cached in env var
+    $DEPOT_PATH.
+    """
+
     if 'DEPOT_PATH' not in os.environ:
         os.environ['DEPOT_PATH'] = os.path.dirname(
             Pyforce.unescape(list(Pyforce('where', 'dummy'))[0]['depotFile']))
@@ -108,10 +121,12 @@ def _depot_path():
 
 
 def o4_seed_from(seed_dir, seed_fstat, op):
-    ''' For each target fstat on stdin, copy the matching file from the seed directory
-        if 1) the seed fstat agrees, or 2) if no fstat, the checksum agrees.
-        Output the fstat entries that were not copied.
-    '''
+    """
+    For each target fstat on stdin, copy the matching file from the
+    seed directory if 1) the seed fstat agrees, or 2) if no fstat, the
+    checksum agrees. Output the fstat entries that were not copied.
+    """
+
     import shutil
 
     def no_uchg(*fnames):
@@ -135,38 +150,31 @@ def o4_seed_from(seed_dir, seed_fstat, op):
 
     seed_checksum = None
     if seed_fstat:
-        seed_checksum = {
-            f[F_PATH]: f[F_CHECKSUM] for f in fstat_from_csv(seed_fstat, fstat_split) if f
-        }
+        seed_checksum = {f[F_PATH]: f[F_CHECKSUM] for f in fstat_from_csv(seed_fstat) if f}
     target_dir = os.getcwd()
     with chdir(seed_dir):
         for line in sys.stdin:
             f = fstat_split(line)
             if not f:
                 continue
-            if not f[F_CHECKSUM]:  # File is deleted
-                continue
-            dest = os.path.join(target_dir, f[F_PATH])
-            if os.path.lexists(dest):
-                try:
-                    os.unlink(dest)
-                except IOError as e:
-                    if e.errno == EPERM and sys.platform == 'darwin':
-                        no_uchg(dest)
+            if f[F_CHECKSUM]:
+                dest = os.path.join(target_dir, f[F_PATH])
+                if os.path.lexists(dest):
+                    try:
                         os.unlink(dest)
-                    else:
-                        raise
-            copyit = False
-            if f[F_FILE_SIZE].endswith('symlink'):
-                copyit = True
-            elif seed_fstat:
-                copyit = seed_checksum.get(f[F_PATH]) == f[F_CHECKSUM]
-            else:
-                copyit = f[F_CHECKSUM] == Pyforce.checksum(f[F_PATH], f[F_FILE_SIZE])
-            if not copyit:
-                print(line, end='')  # line already ends with '\n'
-                continue
-            update_target(f[F_PATH], dest, fsop)
+                    except IOError as e:
+                        if e.errno == EPERM and sys.platform == 'darwin':
+                            no_uchg(dest)
+                            os.unlink(dest)
+                        else:
+                            raise
+                if seed_fstat:
+                    checksum = seed_checksum.get(f[F_PATH])
+                else:
+                    checksum = Pyforce.checksum(f[F_PATH], f[F_FILE_TYPE], int(f[F_FILE_SIZE]))
+                if f[F_FILE_TYPE] == 'symlink' or checksum == f[F_CHECKSUM]:
+                    update_target(f[F_PATH], dest, fsop)
+            print(line, end='')  # line already ends with '\n'
 
 
 def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=False):
@@ -177,7 +185,6 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
           to exclude from output
     keep: Input file name with a line-by-line file list of filenames
           to limit output to
-
     force: output all fstat lines even though previous_cl is set. This only affects
            fstat when previous_cl is more recent than changelist (reverse sync).
 
@@ -255,11 +262,11 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
     if previous_cl and previous_cl > changelist:
         # Syncing backwards requires us to delete files that were added between the lower and
         # higher changelist. All other files must be synced to their state at the lower changelist
-        past_filenames = set(p for p, _ in map(
-            fstat_path,
+        past_filenames = set(r[1] for r in map(
+            fstat_cl_path,
             progress_iter(
                 fstat_iter(_depot_path(), changelist),
-                os.getcwd() + '/.o4/.fstat', 'fstat-reverse')) if p)
+                os.getcwd() + '/.o4/.fstat', 'fstat-reverse')) if r[1])
         if not keep:
             keep = set()
         if not drop:
@@ -272,7 +279,7 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
             if not f:
                 continue
             if f[F_PATH] not in past_filenames:
-                print(f'{changelist},{f[F_PATH]},0,0,')
+                print(f'{changelist},0,0,reverse_sync/delete,text,,{f[F_PATH]}')
                 if force:
                     drop.add(f[F_PATH])
             elif not force:
@@ -295,16 +302,25 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
     if not keep:
         keep = None
 
-    fstats = iter(
-        progress_iter(
-            fstat_iter(_depot_path(), changelist, previous_cl),
-            os.getcwd() + '/.o4/.fstat', 'fstat'))
+    o4_log(
+        'fstat',
+        _depot_path(),
+        changelist=changelist,
+        previous_cl=previous_cl,
+        drop=drop,
+        keep=keep,
+        quiet=quiet,
+        force=force)
+
+    fstats = progress_iter(
+        fstat_iter(_depot_path(), changelist, previous_cl),
+        os.getcwd() + '/.o4/.fstat', 'fstat')
     # Can't break out of fstat_iter without risking that the local
     # cache is not created, causing fstat_from_perforce to be called
     # twice, so we use an iterator that we can drain.
     for line in fstats:
         if keep is not None or drop is not None:
-            path, line = fstat_path(line)
+            _, path, _ = fstat_cl_path(line)
             if not path:
                 continue
             if drop is not None:
@@ -325,7 +341,6 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
                     # local cache is created.
                     sum(0 for line in fstats)
                     break
-
         print(line)
     actual_cl, fname = get_fstat_cache(changelist)
     return actual_cl
@@ -363,14 +378,14 @@ def o4_drop_have(verbose=False):
         needle = f"{Pyforce.escape(f[F_PATH])}#{f[F_REVISION]} -"
         i = bisect_left(have, needle)
         miss = (i == len(have)) or not have[i].startswith(needle)
-        if miss and f[F_CHECKSUM]:
+        if miss and not f[F_LAST_ACTION].endswith('delete'):
             print(line)
     if verbose:
         t0, t1 = time.time(), t0
         err_print("# BISECT", t0 - t1)
 
 
-def o4_filter(filtertype, filters):
+def o4_filter(filtertype, filters, verbose):
     from functools import partial
 
     # Each function implements a filter. It is called with an Fstat tuple.
@@ -378,27 +393,11 @@ def o4_filter(filtertype, filters):
     # matches the local file's checksum), it returns the row; otherwise it
     # returns None. It also has the option of returning an altered copy.
 
-    def caseful(fname, dir_cache={}):
-        path = fname.split('/')
-        for i in range(len(path)):
-            lpath = '.' if not i else os.path.join(*path[:i]).lower()
-            if lpath not in dir_cache:
-                try:
-                    dir_cache[lpath] = set(os.listdir(lpath))
-                except (FileNotFoundError, NotADirectoryError):
-                    break
-            if path[i] not in dir_cache[lpath]:
-                for p in dir_cache[lpath]:
-                    if path[i].lower() == p.lower():
-                        path[i] = p
-                        break
-                else:
-                    break
-        return '/'.join(path)
+    def f_deletes(row):
+        return not row[F_CHECKSUM]
 
     def f_case(row):
-        if row[F_PATH] == caseful(row[F_PATH]):
-            return row
+        return caseful_accurate(row[F_PATH])
 
     def f_open(row, p4open={}):
         if not p4open:
@@ -408,63 +407,66 @@ def o4_filter(filtertype, filters):
                 for p in Pyforce('opened', dep + '/...')
             })
             p4open['populated'] = True
-        if row[F_PATH] in p4open:
-            return row
+        return row[F_PATH] in p4open
 
-    def f_exist(row):
-        if os.path.lexists(row[F_PATH]) != (row[F_CHECKSUM] == ''):  # File is deleted
-            return row
+    def f_existence(row):
+        """
+        Returns True if the file presence matches the fstat. That is True
+        if fstat says 'delete' and file is missing or True if fstat is
+        not 'delete' and file exists.
+        """
+        return (os.path.lexists(row[F_PATH]) and
+                not os.path.isdir(row[F_PATH])) == bool(row[F_CHECKSUM])
 
     def f_checksum(row):
         if os.path.lexists(row[F_PATH]):
-            if not row[F_CHECKSUM]:  # File is deleted
+            if row[F_LAST_ACTION].endswith('delete'):
                 if os.path.isdir(row[F_PATH]):
-                    return row
-            elif row[F_FILE_SIZE].endswith('symlink') or Pyforce.checksum(
-                    row[F_PATH], row[F_FILE_SIZE]) == row[F_CHECKSUM]:
-                return row
+                    return True
+            elif row[F_FILE_TYPE] == 'symlink' or Pyforce.checksum(
+                    row[F_PATH], row[F_FILE_TYPE], int(row[F_FILE_SIZE])) == row[F_CHECKSUM]:
+                return True
         else:
-            if not row[F_CHECKSUM]:
-                return row
+            if row[F_LAST_ACTION].endswith('delete'):
+                return True
 
-    verbose = False
-    funcs = []
-    for filter in filters:
-        doit, fname, args = filter[1], filter[0], filter[2:]
-        if doit:
-            f = locals()['f_' + fname]
-            f = f if not args else partial(f, args)
-            funcs.append(f)
+    def inverter(fname, invert):
+        if invert:
+            return f"not({fname})"
+        return fname
+
+    funcs = [inverter(f'f_{fname}(x)', invert) for fname, doit, invert in filters if doit]
     if not funcs:
-        print(f'# ERROR No arguments supplied to filter')
-        sys.exit(0)
-
-    def nop(row):
-        return False
-
-    def pp(row):
-        print(fstat_join(row))
-        return True
-
-    if filtertype == 'drop':
-        pkeep, pdrop = nop, pp
+        sys.exit(f'*** ERROR: No arguments supplied to filter')
+    elif len(funcs) == 1 and filtertype != 'drop' and not funcs[0].startswith('not('):
+        if verbose:
+            print(f"# Filter {filtertype}:", funcs, file=sys.stderr)
+        combo_func = locals()[funcs[0].split('(')[0]]
+    elif filtertype == 'drop':
+        combo_func = 'lambda x: not(' + ' or '.join(f for f in funcs) + ')'
+        if verbose:
+            print(f"# Filter {filtertype}:", combo_func, file=sys.stderr)
+        combo_func = eval(combo_func, locals())
+    elif filtertype == 'keep-any':
+        combo_func = 'lambda x: ' + ' or '.join(f for f in funcs)
+        if verbose:
+            print(f"# Filter {filtertype}:", combo_func, file=sys.stderr)
+        combo_func = eval(combo_func, locals())
+    elif filtertype == 'keep':
+        combo_func = 'lambda x: ' + ' and '.join(f for f in funcs)
+        if verbose:
+            print(f"# Filter {filtertype}:", combo_func, file=sys.stderr)
+        combo_func = eval(combo_func, locals())
     else:
-        pkeep, pdrop = pp, nop
+        sys.exit(f"*** ERROR: Invalid filtertype: {filtertype}")
 
     try:
         for row in map(fstat_split, sys.stdin):
-            if not row:
-                continue
-            for f in funcs:
-                ret = f(row)
-                if ret:
-                    row = ret
-                    printed = pkeep(ret)
-                    break
-            else:
-                printed = pdrop(row)
-            if verbose and not printed:
-                print('#', ','.join(row))
+            if row:
+                if combo_func(row):
+                    print(','.join(row))
+                elif verbose:
+                    print('#', ','.join(row))
     except KeyboardInterrupt:
         raise
     except Exception as e:
@@ -474,20 +476,38 @@ def o4_filter(filtertype, filters):
 
 
 def o4_pyforce(debug, no_revision, args: list, quiet=False):
+    """
+    Encapsulates Pyforce, does book keeping to ensure that all files
+    that should be operated on are in fact dealt with by p4. Handles
+    retry and strips out asks for files that are caseful mismatches on
+    the current file system (macOS).
+    """
+
     from tempfile import NamedTemporaryFile
     from collections import defaultdict
 
+    o4_log('pyforce', no_revision=no_revision, quiet=quiet, *args)
+
     tmpf = NamedTemporaryFile(dir='.o4')
-    fstats = [f for f in map(fstat_split, sys.stdin.read().splitlines()) if f]
+    fstats = []
+    for f in map(fstat_split, sys.stdin.read().splitlines()):
+        if f and caseful_accurate(f[F_PATH]):
+            fstats.append(f)
+        elif f:
+            print(
+                f"*** WARNING: Pyforce is skipping {f[F_PATH]} because it is casefully",
+                "mismatching a local file.",
+                file=sys.stderr)
     retries = 3
     head = _depot_path().replace('/...', '')
     while fstats:
         if no_revision:
-            p4paths = ["{}".format(Pyforce.escape(f[F_PATH])) for f in fstats]
+            p4paths = [Pyforce.escape(f[F_PATH]) for f in fstats]
         else:
-            p4paths = ["{}#{}".format(Pyforce.escape(f[F_PATH]), f[F_REVISION]) for f in fstats]
+            p4paths = [f"{Pyforce.escape(f[F_PATH])}#{f[F_REVISION]}" for f in fstats]
         tmpf.seek(0)
         tmpf.truncate()
+        not_yet = []
         pargs = []
         xargs = []
         # This is a really bad idea, files are output to stdout before the actual
@@ -512,6 +532,7 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
             for res in Pyforce(*pargs, *args, *xargs):
                 if debug:
                     err_print("*** DEBUG: Received", repr(res))
+                # FIXME: Delete this if-statement:
                 if res.get('code', '') == 'info':
                     if res.get('data', '').startswith(
                             'Diff chunks') and not res['data'].endswith('+ 0 conflicting'):
@@ -537,9 +558,7 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
                 for i, f in enumerate(fstats):
                     if f"{head}/{f[F_PATH]}" in res_str:
                         repeats[f[F_PATH]].append(res)
-                        fstat = fstats.pop(i)
-                        if not quiet:
-                            print(fstat_join(fstat))
+                        not_yet.append(fstats.pop(i))
                         break
                 else:
                     for f in repeats.keys():
@@ -579,6 +598,13 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
             retries -= 1
             if not retries:
                 sys.exit(f"{CLR}*** ERROR: Perforce timed out too many times:\n{e}")
+        finally:
+            if not quiet:
+                for fstat in not_yet:
+                    # Printing the fstats after the p4 process has ended, because p4 marshals
+                    # its objects before operation, as in "And for my next act... !"
+                    # This premature printing leads to false checksum errors during sync.
+                    print(','.join(fstat))
 
 
 def o4_sync(changelist,
@@ -608,8 +634,8 @@ def o4_sync(changelist,
 
         Sync the files open for edit (if the file is missing, it must be reverted):
           o4 fstat .<CL> [--changed <cur_CL>] | o4 keep -—open | gatling o4 pyforce sync |
-               gatling o4 pyforce resolve -am | o4 drop --exist | o4 pyforce revert |
-               o4 drop --exist | o4 fail
+               gatling o4 pyforce resolve -am | o4 drop --existence | o4 pyforce revert |
+               o4 drop --existence | o4 fail
 
         Sync the files not open for edit, supply --case on macOS:
           o4 fstat .<CL> [--changed <cur_CL>] | o4 drop -—open [--case] |
@@ -654,7 +680,8 @@ def o4_sync(changelist,
         client = pyforce_client()
         cname = client['Client']
         view = [
-            v[1:].split(' //' + cname) for k, v in client.items()
+            v[1:].split(' //' + cname)
+            for k, v in client.items()
             if k.startswith('View') and not v.startswith('-//')
         ]
 
@@ -727,6 +754,19 @@ def o4_sync(changelist,
                     "{CLR}*** WARNING: {os.getcwd()}/.o4/changelist could not be read",
                     file=sys.stderr)
 
+    o4_log(
+        'sync',
+        changelist=changelist,
+        previous_cl=previous_cl,
+        seed=seed,
+        seed_move=seed_move,
+        quick=quick,
+        force=force,
+        skip_opened=skip_opened,
+        verbose=verbose,
+        gatling=gatling,
+        manifold=manifold)
+
     verbose = ' -v' if verbose else ''
     force = ' -f' if force else ''
     fstat = f"{o4bin} fstat{force} ...@{changelist}"
@@ -738,16 +778,13 @@ def o4_sync(changelist,
     gatling_verbose = gat(f"gatling{verbose}")
     manifold_verbose = man(f"manifold{verbose}")
     progress = f"| {o4bin} progress" if sys.stdin.isatty() and progress_enabled() else ''
-
-    casefilter = ''
+    casefilter = ' --case' if sys.platform == 'darwin' else ''
+    keep_case = f'| {o4bin} keep --case' if casefilter else ''
     if previous_cl == changelist and not force:
         print(f'*** INFO: {os.getcwd()} is already synced to {changelist}, use -f to force a'
               f' full verification.')
         return
-    if sys.platform == 'darwin':
-        casefilter = f"| {o4bin} keep --case"
 
-    unopened = ''
     has_open = list(Pyforce('opened', '...'))
     openf = NamedTemporaryFile(dir='.o4', mode='w+t')
     if has_open:
@@ -766,10 +803,11 @@ def o4_sync(changelist,
                f"| {o4bin} pyforce sync"
                f"| {gatling_verbose} -- {o4bin} pyforce --no-rev -- resolve -am"
                f"{progress}"
-               f"| {o4bin} drop --exist"
+               f"| {o4bin} drop --existence"
                f"| {gatling_verbose} -- {o4bin} pyforce --no-rev -- revert"
-               f"| {o4bin} drop --exist"
+               f"| {o4bin} drop --existence"
                f"| {o4bin} fail")
+        # Unopened only from here on
         fstat += f' --drop {openf.name}'
         if not skip_opened:
             run_cmd(cmd)
@@ -782,37 +820,36 @@ def o4_sync(changelist,
     retry = (f"| {manifold_big} {o4bin} drop --checksum"
              f"| {gatling_verbose} {o4bin} {quiet} pyforce sync -f"
              f"| {manifold_big} {o4bin} drop --checksum"
+             f"| {gatling_verbose} {o4bin} {quiet} pyforce sync -f"
+             f"| {manifold_big} {o4bin} drop --checksum"
              f"| {o4bin} fail")
-    seedcmd = ''
+
+    syncit = f"| {gatling_verbose} {o4bin} {quiet} pyforce sync{force}"
     if seed:
-        seedcmd = f"| {manifold_verbose} {o4bin} seed-from {seed}"
+        syncit = f"| {manifold_verbose} {o4bin} seed-from {seed}"
         _, seed_fstat = get_fstat_cache(10_000_000_000, seed + '/.o4')
         if seed_fstat:
-            seedcmd += f" --fstat {os.path.abspath(seed_fstat)}"
+            syncit += f" --fstat {os.path.abspath(seed_fstat)}"
         if seed_move:
-            seedcmd += " --move"
+            syncit += " --move"
 
     cmd = (f"{fstat}"
-           f"| {manifold_big} {o4bin} drop --checksum"
-           f"{unopened}"
-           f"{casefilter}"
-           f"{seedcmd}"
+           f"| {manifold_big} {o4bin} drop --checksum --deletes"
+           f"{keep_case}"
            f"{progress}"
-           f"| {gatling_verbose} {o4bin} {quiet} pyforce sync{force}")
-    if not seed:
-        cmd += retry
+           f"{syncit}"
+           f"{retry}")
     run_cmd(cmd)
 
     if seed:
         if not previous_cl:
             print(f"*** INFO: Flushing to changelist {changelist}, please do not interrupt")
             t0 = time.time()
-            consume(Pyforce('sync', '-k', f'...@{changelist}'))
+            consume(Pyforce('-q', 'sync', '-k', f'...@{changelist}'))
             print("*** INFO: Flushing took {:.2f} minutes".format((time.time() - t0) / 60))
-        cmd = fstat + unopened + casefilter + (f"| {manifold_big} {o4bin} drop --checksum"
-                                               f"| {gatling_verbose} {o4bin} pyforce sync{force}")
-        cmd += retry
-        run_cmd(cmd)
+
+    cmd = f"{fstat} | {o4bin} keep --deletes --not-existence {casefilter}" + progress + retry
+    run_cmd(cmd)
 
     actual_cl, _ = get_fstat_cache(changelist)
     with open('.o4/changelist', 'wt') as fout:
@@ -820,7 +857,8 @@ def o4_sync(changelist,
 
     if seed or not quick:
         print("*** INFO: Sync is now locally complete, verifying server havelist.")
-        cmd = (f"{fstat}{unopened}{casefilter}"
+        cmd = (f"{fstat}"
+               f"{keep_case}"
                f"| {o4bin} drop --havelist"
                f"{progress}"
                f"| {gatling_low} {o4bin} pyforce sync -k"
@@ -878,7 +916,8 @@ def o4_clean(changelist, quick=False, resume=False, discard=False):
         dep = _depot_path().replace('/...', '')
         p4open = [
             Pyforce.unescape(p['depotFile'])[len(dep) + 1:]
-            for p in Pyforce('opened', dep + '/...') if 'delete' not in p['action']
+            for p in Pyforce('opened', dep + '/...')
+            if 'delete' not in p['action']
         ]
         print(f"*** INFO: Not cleaning {len(p4open)} files opened for edit.")
         for of in p4open:
@@ -917,7 +956,7 @@ def o4_fail():
         if len(files) != n:
             err_print(f"  ...and {n-len(files)} others!")
         err_print(dash)
-        sys.exit(f"{CLR}*** ERROR: Pipeline ended with {n} fstat lines.\n")
+        sys.exit(f"{CLR}*** ERROR: Pipeline ended with {n} fstat lines.")
 
 
 def o4_head(paths):
@@ -987,8 +1026,8 @@ def parallel_fstat(opts):
             print(p, file=sin)
         sin.seek(0, 0)
         # Makes the assumption that no path is less than 4 bytes:
-        return check_call(
-            ['manifold', '-c', '4', '--', 'xargs', '-n1', 'o4', 'fstat', '-q'], stdin=sin)
+        return check_call(['manifold', '-c', '4', '--', 'xargs', '-n1', 'o4', 'fstat', '-q'],
+                          stdin=sin)
 
 
 def add_implicit_args(args):
@@ -1022,17 +1061,25 @@ def main():
         if opts['seed-from']:
             ran = True
             o4_seed_from(opts['<dir>'], opts['--fstat'], 'move' if opts['--move'] else 'copy')
-        if opts['drop'] or opts['keep']:
+        filtertype = [f for f in ('drop', 'keep', 'keep-any') if opts[f]]
+        if filtertype:
             ran = True
             if opts['--havelist']:
                 o4_drop_have()
             else:
-                o4_filter('drop' if opts['drop'] else 'keep', (
-                    ('case', opts['--case']),
-                    ('open', opts['--open']),
-                    ('exist', opts['--exist']),
-                    ('checksum', opts['--checksum']),
-                ))
+                # This order is the best for performance, think before rearranging.
+                o4_filter(filtertype[0], (
+                    ('deletes', opts['--deletes'], False),
+                    ('deletes', opts['--not-deletes'], True),
+                    ('existence', opts['--existence'], False),
+                    ('existence', opts['--not-existence'], True),
+                    ('checksum', opts['--checksum'], False),
+                    ('checksum', opts['--not-checksum'], True),
+                    ('case', opts['--case'], False),
+                    ('case', opts['--not-case'], True),
+                    ('open', opts['--open'], False),
+                    ('open', opts['--not-open'], True),
+                ), opts['-v'])
         if opts['pyforce']:
             ran = True
             o4_pyforce(opts['--debug'], opts['--no-rev'], opts['<p4args>'], opts['-q'])
@@ -1050,9 +1097,9 @@ def main():
         print_exc(file=sys.stderr)
         print(f'*** ERROR: {e}', file=sys.stderr)
         ec = 1
-    finally:
-        if ran:
-            sys.exit(ec)
+
+    if ran or ec:
+        sys.exit(ec)
 
     if opts['head']:
         o4_head(map(depot_abs_path, opts['<paths>']))
@@ -1122,7 +1169,6 @@ def main():
         ec = 0 - SIGINT
     except BrokenPipeError:
         print('*** ERROR: broken pipe :(', file=sys.stderr)
-
     sys.exit(ec)
 
 

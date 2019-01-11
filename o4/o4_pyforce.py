@@ -57,11 +57,13 @@ class Pyforce(object):
                 res = marshal.load(self.pope.stdout)
                 if res.get(b'code') == b'info' and res.get(b'data', ''):
                     data = res.get(b'data')
-                    if (b"can't move (already opened for edit)" in data or
-                            b"is opened for add and can't be replaced" in data or
-                            b"is opened and not being changed" in data or b"must resolve" in data or
-                        (data.startswith(b'Diff chunks') and
-                         not data.endswith(b'+ 0 conflicting'))):
+                    ## Why was this upped to error?
+                    #  b"is opened and not being changed" in data or b"must resolve" in data) and
+                    if data.startswith(b'Diff chunks') and not data.endswith(b'+ 0 conflicting'):
+                        print("*** WARNING: There are conflicts.", file=sys.stderr)
+                    elif (b"can't move (already opened for edit)" in data or
+                          b"is opened for add and can't be replaced" in data or
+                          b"- resolve skipped" in data):
                         res[b'code'] = b'error'
                 if res.get(b'code') != b'error':
                     return self.transform(res)
@@ -73,7 +75,8 @@ class Pyforce(object):
                             b'file(s) not on client' in res[b'data'] or
                             b'No shelved files in changelist to delete' in res[b'data']):
                         res[b'code'] = b'stat'
-                    elif b'no file(s) at that changelist number' in res[b'data']:
+                    elif (b'no file(s) at that changelist number' in res[b'data'] or
+                            b'no revision(s) above those at that changelist number' in res[b'data']):
                         # print('*** INFO: Skipping premature sync: ', res)
                         res[b'code'] = b'skip'
                     elif b'clobber writable file' in res[b'data']:

@@ -61,6 +61,8 @@ class FstatRedirection(Exception):
     def __init__(self, cl):
         self.cl = cl
 
+class FstatServerError(Exception):
+    """The fstat server was unavailable; use Perforce."""
 
 class FstatMalformed(Exception):
     """Raised when an fstat line is malformed."""
@@ -70,16 +72,8 @@ def fstat_join(f):
     """
     Combines fstat columns into a string, properly escaped.
     """
-    try:
-        p = f[1].replace(';', ';;').replace(',', ';.')
-        # Make sure we don't unnecessarily cause a tuple to list conversion:
-        if len(p) != len(f[1]):
-            f[1] = p
-        return ','.join(f)
-    except TypeError:
-        f = [str(i) for i in f]
-        f[1] = p
-    return ','.join(f)
+    p = f[1].replace(';', ';;').replace(',', ';.')
+    return f"{f[0]},{p},{f[2]},{f[3]},{f[4]}"
 
 
 def fstat_split(line):
@@ -114,6 +108,9 @@ def fstat_cl_path(line):
     unless it starts with '#' or is empty, in which case the returned
     changelist and path is None.
 
+    Older 7-column format is converted to 5-column, including the
+    returned line.
+
     Returns a tuple: (changelist, path, line)
     """
     line = line.rstrip()
@@ -121,7 +118,9 @@ def fstat_cl_path(line):
         return None, None, line
     cl, path, _ = line.split(',', 2)
     if path.isdigit():
-        cl, path = fstat_split(line)[:2]
+        f = fstat_split(line)
+        line = fstat_join(f)
+        cl, path = f[:2]
     else:
         path = path.replace(';.', ',').replace(';;', ';')
     return int(cl), path, line
@@ -132,6 +131,9 @@ def fstat_path(line):
     Extracts path from an fstat line, unless it starts with '#' or is
     empty, in which case the returned path is None.
 
+    Older 7-column format is converted to 5-column, including the
+    returned line.
+
     Returns a tuple: (path, line)
     """
     line = line.rstrip()
@@ -139,7 +141,9 @@ def fstat_path(line):
         return None, line
     _, path, _ = line.split(',', 2)
     if path.isdigit():
-        _, path = fstat_split(line)[:2]
+        f = fstat_split(line)
+        line = fstat_join(f)
+        _, path = f[:2]
     else:
         path = path.replace(';.', ',').replace(';;', ';')
     return path, line
@@ -149,6 +153,9 @@ def fstat_cl(line):
     """
     Extracts integer changelist from an fstat line, unless it starts
     with '#' or is empty, in which case the returned changelist is 0.
+
+    WARNING: Can not detect 5-col/7-col format and will just return
+             line as is.
 
     Returns a tuple: changelist, line
     """
@@ -180,15 +187,77 @@ def get_fstat_cache(changelist, o4_dir='.o4'):
     cache file less than changelist. If there isn't one, (None, None)
     is returned.
     """
-    import glob
+    from glob import glob
     changelist = int(changelist)
-    fstats = glob.glob(f'{o4_dir}/*.fstat.gz')
+    fstats = glob(f'{o4_dir}/*.fstat.gz')
     cls = sorted((int(os.path.basename(f).split('.', 1)[0]) for f in fstats),
                  key=lambda x: (abs(x - changelist), x))
     cls = [c for c in cls if c <= changelist]
     if cls:
         return cls[0], f"{o4_dir}/{cls[0]}.fstat.gz"
     return 0, None
+
+
+def prune_fstat_cache(o4_dir='.o4'):
+    """
+    Removes every other fstat file, not including the oldest one
+    and the one most recently synced.
+    """
+    from glob import glob
+    try:
+        with open(f'{o4_dir}/changelist') as f:
+            safe = int(f.readline().strip())
+    except Exception:
+        safe = None
+    
+    fstats = glob(f'{o4_dir}/*.fstat.gz')
+    cls = sorted(int(os.path.basename(f).split('.', 1)[0]) for f in fstats)
+    removed = 0
+    for cl in cls[1::2]:
+        if cl != safe:
+            try:
+                os.remove(f'{o4_dir}/{cl}.fstat.gz')
+                removed += 1
+            except Exception:
+                pass
+    return removed
+
+
+def prune_archive_cache(o4_dir='.o4'):
+    """
+    Removes archive files, preserving the one from the most recent sync.
+    Archives made in the last 24 hours are not deleted unless there are
+    no others.
+    """
+    from glob import glob
+    import time
+    try:
+        with open(f'{o4_dir}/changelist') as f:
+            safe = int(f.readline().strip())
+    except Exception:
+        safe = None
+    now = time.time()
+    archives = glob(f'{o4_dir}/*__*.tgz')
+    archives = [(now - os.stat(f).st_mtime,
+                int(os.path.basename(f).split('.', 1)[0]),
+                f) for f in archives]
+    archives = sorted((a for a in archives if a[1] != safe), reverse=True)
+    removed = 0
+    for age, cl, path in archives:
+        try:
+            if age > 60 * 60 * 24:
+                os.remove(path)
+                removed += 1
+        except Exception:
+            pass
+    if not removed:
+        for age, cl, path in archives:
+            try:
+                os.remove(path)
+                removed += 1
+            except Exception:
+                pass
+    return removed
 
 
 def fstat_iter(depot_path, to_changelist, from_changelist=0, cache_dir='.o4'):
@@ -248,15 +317,16 @@ def fstat_iter(depot_path, to_changelist, from_changelist=0, cache_dir='.o4'):
             try:
                 for line in fstat_from_server(depot_path, missing_range[0], missing_range[1],
                                               o4_config.fstat_server_nearby()):
-                    f = fstat_split(line)
-                    if not f:
+                    cl, path, line = fstat_cl_path(line)
+                    if not cl:
                         continue
-                    _last = f[F_CHANGELIST]
-                    _first = _first or f[F_CHANGELIST]
-                    all_filenames.add(f[F_PATH])
+                    _last = cl
+                    _first = _first or cl
+                    all_filenames.add(path)
                     print(line, file=fout)
-                    yield line
-                summary['Fstat server'] = (o4server_range, (int(_first), int(_last)))
+                    if from_changelist < cl <= to_changelist:
+                        yield line
+                summary['Fstat server'] = (missing_range, (int(_first), int(_last)))
                 missing_range = (None, None)
             except FstatRedirection as e:
                 print(f'*** INFO: Fstat server redirected to changelist {e.cl}', file=sys.stderr)
@@ -267,6 +337,9 @@ def fstat_iter(depot_path, to_changelist, from_changelist=0, cache_dir='.o4'):
                 elif e.cl > cache_cl:
                     missing_range = (to_changelist, e.cl + 1)
                     o4server_range = (e.cl, cache_cl + 1)
+            except FstatServerError as e:
+                summary['Fstat server'] = (missing_range, (0, 0))
+                
         highest_written_cl = max(highest_written_cl, int(_first))
 
         perforce_filenames = dict()
@@ -283,15 +356,16 @@ def fstat_iter(depot_path, to_changelist, from_changelist=0, cache_dir='.o4'):
                             perforce_filenames[f[F_PATH]] = f
                     break
                 except P4Error as e:
-                    fix = False
+                    done = False
                     for a in e.args:
+                        fix = False
                         if 'Too many rows scanned' in a.get('data', ''):
                             if cache_cl:
                                 print(
-                                    f"{CLR}*** WARNING: Maxrowscan occurred, ignoring cache {cache_fname}@{cache_cl}",
+                                    f"{CLR}*** WARNING: Maxrowscan occurred, ignoring cache {cache_fname}",
                                     file=sys.stderr)
                                 fix = True
-                                cache_cl = cache_fname = None
+                                missing_range = (to_changelist, None)
                                 retry += 1
                         elif 'Request too large' in a.get('data', ''):
                             sys.exit(
@@ -302,9 +376,12 @@ def fstat_iter(depot_path, to_changelist, from_changelist=0, cache_dir='.o4'):
                                 f"{CLR}*** INFO: Empty changelist range ({missing_range}).",
                                 file=sys.stderr)
                             # Just an empty range of changelists, we are done
+                            done = True
                             break
-                    if not fix:
-                        raise
+                        if not fix:
+                            raise
+                    if done:
+                        break
                 except P4TimeoutError:
                     perforce_filenames.clear()
                     print(f"{CLR}*** WARNING: ({retry+1}/3) P4 Timeout while getting fstat")
@@ -320,44 +397,38 @@ def fstat_iter(depot_path, to_changelist, from_changelist=0, cache_dir='.o4'):
                                                    int(perforce_rows[-1][F_CHANGELIST])))
             highest_written_cl = max(highest_written_cl, int(perforce_rows[0][F_CHANGELIST]))
             for f in perforce_rows:
-                print(*f, sep=',', file=fout)
+                print(fstat_join(f), file=fout)
             del perforce_filenames
 
         if o4server_range[0]:
             _first = _last = 0
             for line in fstat_from_server(depot_path, o4server_range[0], o4server_range[1]):
-                f = fstat_split(line)
-                if not f:
+                cl, path, line = fstat_cl_path(line)
+                if not cl:
                     continue
-                _last = f[F_CHANGELIST]
-                _first = _first or f[F_CHANGELIST]
-                if f[F_PATH] not in all_filenames:
-                    all_filenames.add(f[F_PATH])
+                _last = cl
+                _first = _first or cl
+                if path not in all_filenames:
+                    all_filenames.add(path)
                     print(line, file=fout)
-                    if (from_changelist < int(f[F_CHANGELIST]) <= to_changelist):
+                    if from_changelist < cl <= to_changelist:
                         yield line
             summary['Fstat server'] = (o4server_range, (int(_first), int(_last)))
             highest_written_cl = max(highest_written_cl, int(_first))
 
         if cache_cl:
-            convert = False
             _first = _last = 0
-            for cl, filename, line in fstat_from_csv(cache_fname, fstat_cl_path):
-                if not filename:
-                    if line.startswith('# COLUMNS:'):
-                        if 'F_LAST_ACTION' in line or 'F_FILE_TYPE' in line:
-                            convert = True
+            for cl, path, line in fstat_from_csv(cache_fname, fstat_cl_path):
+                if not cl:
                     continue
-                if all_filenames and filename in all_filenames:
-                    all_filenames.remove(filename)
-                    continue
+                _last = cl
                 _first = _first or cl
-                if convert:
-                    line = fstat_join(fstat_split(line))
-                if from_changelist < cl <= to_changelist:
-                    _last = cl
-                    yield line
-                print(line, file=fout)
+                if path not in all_filenames:
+                    print(line, file=fout)
+                    if from_changelist < cl <= to_changelist:
+                        yield line
+                else:
+                    all_filenames.remove(path)
             summary['Local cache'] = ((cache_cl, 1), (int(_first), int(_last)))
             highest_written_cl = max(highest_written_cl, int(_first))
 
@@ -414,8 +485,8 @@ def fstat_from_perforce(depot_path, upper, lower=None):
                 sz = sz + '/' + t
             return [
                 r[b'headChange'].decode('utf8'),
-                Pyforce.unescape(r[b'depotFile'].decode('utf8'))[head:].replace(';', ';;').replace(
-                    ',', ';.'), r[b'headRev'].decode('utf8'), sz, c
+                Pyforce.unescape(r[b'depotFile'].decode('utf8'))[head:],
+                r[b'headRev'].decode('utf8'), sz, c
             ]
         except StopIteration:
             raise
@@ -423,11 +494,12 @@ def fstat_from_perforce(depot_path, upper, lower=None):
             print("*** ERROR: Got {!r} while fstatify({!r})".format(e, r), file=sys.stderr)
             raise
 
-    revs = '@{}'.format(upper)
+    lower = lower or 0
+    revs = f'@{upper}'
     if lower > 1:
         # A range going back to the beginning will get a Perforce error.
         assert lower <= upper
-        revs = '@{},@{}'.format(lower, upper)
+        revs = f'@{lower},@{upper}'
     pyf = Pyforce('fstat', '-Rc', '-Ol', '-Os', '-T',
                   'headType, digest, fileSize, depotFile, headChange, headRev',
                   Pyforce.escape(depot_path) + revs)
@@ -445,18 +517,18 @@ def fstat_from_server(depot_path, upper, lower, nearby=None):
     url = f'{o4_config.fstat_server()}/o4-http/fstat/{upper}/{depot_path}'
     if nearby:
         url += f'?nearby={nearby}'
-    print(f'*** INFO: Fetching {url}', file=sys.stderr)
-    server = requests.get(url, stream=True, allow_redirects=False)
+    server = requests.get(url, stream=True, allow_redirects=False,
+             auth=o4_config.fstat_server_auth(),
+             verify=o4_config.fstat_server_cert())
     if server.status_code == 404:
         raise Exception(f'Unknown fstat request:  {url}')
     if server.status_code // 100 == 3:
-        redir = server.headers['Location']
-        us = url.split('/')
-        rs = redir.split('/')
-        cl = int([i for i in zip(us, rs) if i[0] != i[1]][0][1])
+        redir = server.headers['Location'].split('/')
+        cl = int(redir[redir.index('o4-http') + 2])  # Throws ValueError on miss
         raise FstatRedirection(cl)
     if server.status_code != 200:
-        raise Exception(f'*** WARNING: Status {server.status_code} from {url}')
+        print(f'*** WARNING: Status {server.status_code} from {url}', file=sys.stderr)
+        raise FstatServerError()
 
     for buf in gzip.GzipFile(fileobj=server.raw):
         cl, line = fstat_cl(buf.decode('utf8'))

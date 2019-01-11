@@ -55,7 +55,9 @@ def progress_iter(it, path, desc, delay=0.5, delta=500):
     for.
     """
     if not progress_enabled():
-        return it
+        for line in it:
+            yield line
+        return
     with open(swap_filename(path), 'wt') as pout:
         try:
             for n, r in enumerate(it):

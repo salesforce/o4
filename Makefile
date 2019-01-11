@@ -50,7 +50,7 @@ build/%: build/%.za
 	rm -fr $</*.dist-info
 	find $< -type d -name __pycache__ | xargs rm -fr
 # Only python3.7 has compress, but it's backwards compatible
-	${PYTHON} -m zipapp -p '/usr/bin/env python3' -m $(notdir $@):main $< -o $@
+	${PYTHON} -m zipapp -c -p '/usr/bin/env python3' -m $(notdir $@):main $< -o $@
 
 .%.lint: %.py venv
 	${PYFLAKES} $< || true

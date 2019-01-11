@@ -77,7 +77,7 @@ def change_password():
         os.environ['P4PASSWD'] = prev
         app.logger.info(f'Problem checking new password: {e}')
     return uncached(400, '')
-    
+
 
 @contextlib.contextmanager
 def log_time(operation, changelist, depot):
@@ -190,7 +190,7 @@ def purge():
         used = int(out.strip()) * 1024
         if used > max_single_dir:
             o4_fstat.prune_fstat_cache(d)
-        
+
     while True:
         time.sleep(60)
         o4dirs = o4package.o4locations()
@@ -207,8 +207,10 @@ if __name__ == '__main__':
     threading.Thread(target=purge, daemon=True).start()
     os.environ['NOO4SERVER'] = 'true'
     shared['p4password'] = os.environ['P4PASSWD']
+
     def share(*args):
         o4package.shared = args[0]
+
     workers = Pool(processes=4, initializer=share, initargs=(shared,))
     try:
         app.run(host='0.0.0.0')

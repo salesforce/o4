@@ -19,6 +19,7 @@ DEFAULT_DISK_FREE = '5g'  # This keeps at least this much disk space free.
 # The file system queried is the one where the fstat server is run from;
 # it is assumed that all o4 directories are on that file system.
 DEFAULT_MAX_DIR = None  # This relates to each o4 directory separately,
+
 # and is the maximum amount of space it should use.
 
 

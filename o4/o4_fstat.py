@@ -61,8 +61,10 @@ class FstatRedirection(Exception):
     def __init__(self, cl):
         self.cl = cl
 
+
 class FstatServerError(Exception):
     """The fstat server was unavailable; use Perforce."""
+
 
 class FstatMalformed(Exception):
     """Raised when an fstat line is malformed."""
@@ -209,7 +211,7 @@ def prune_fstat_cache(o4_dir='.o4'):
             safe = int(f.readline().strip())
     except Exception:
         safe = None
-    
+
     fstats = glob(f'{o4_dir}/*.fstat.gz')
     cls = sorted(int(os.path.basename(f).split('.', 1)[0]) for f in fstats)
     removed = 0
@@ -238,9 +240,9 @@ def prune_archive_cache(o4_dir='.o4'):
         safe = None
     now = time.time()
     archives = glob(f'{o4_dir}/*__*.tgz')
-    archives = [(now - os.stat(f).st_mtime,
-                int(os.path.basename(f).split('.', 1)[0]),
-                f) for f in archives]
+    archives = [
+        (now - os.stat(f).st_mtime, int(os.path.basename(f).split('.', 1)[0]), f) for f in archives
+    ]
     archives = sorted((a for a in archives if a[1] != safe), reverse=True)
     removed = 0
     for age, cl, path in archives:
@@ -339,7 +341,7 @@ def fstat_iter(depot_path, to_changelist, from_changelist=0, cache_dir='.o4'):
                     o4server_range = (e.cl, cache_cl + 1)
             except FstatServerError as e:
                 summary['Fstat server'] = (missing_range, (0, 0))
-                
+
         highest_written_cl = max(highest_written_cl, int(_first))
 
         perforce_filenames = dict()
@@ -517,9 +519,12 @@ def fstat_from_server(depot_path, upper, lower, nearby=None):
     url = f'{o4_config.fstat_server()}/o4-http/fstat/{upper}/{depot_path}'
     if nearby:
         url += f'?nearby={nearby}'
-    server = requests.get(url, stream=True, allow_redirects=False,
-             auth=o4_config.fstat_server_auth(),
-             verify=o4_config.fstat_server_cert())
+    server = requests.get(
+        url,
+        stream=True,
+        allow_redirects=False,
+        auth=o4_config.fstat_server_auth(),
+        verify=o4_config.fstat_server_cert())
     if server.status_code == 404:
         raise Exception(f'Unknown fstat request:  {url}')
     if server.status_code // 100 == 3:

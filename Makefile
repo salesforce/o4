@@ -1,8 +1,4 @@
-# python -m pip install -r requirements.txt --target myapp
 
-ifeq (,$(wildcard venv/bin/python))
-$(warning venv IS MISSING. RUN make venv)
-endif
 PYTHON:=venv/bin/python
 VULTURE:=venv/bin/vulture
 YAPF:=venv/bin/yapf
@@ -13,6 +9,18 @@ O4_SRC:=o4/requirements.txt $(shell find o4 -name '*.py'|grep -v version.py)
 GATLING_SRC:=gatling/requirements.txt $(shell find gatling -name '*.py'|grep -v '/version.py$$')
 MANIFOLD_SRC:=$(shell find manifold -name '*.py'|grep -v version.py)
 
+ifeq (,$(wildcard venv))
+X:=$(shell python3 -m venv venv)
+Y:=$(shell ${PIP} install --upgrade pip)
+Z:=$(shell ${PIP} install -r requirements.txt)
+endif
+
+PYTHON_MAJ:=$(shell ${PYTHON} -c 'import sys; print(sys.version_info.major)')
+PYTHON_MIN:=$(shell ${PYTHON} -c 'import sys; print(sys.version_info.minor)')
+ifneq ($(PYTHON_MAJ), 3)
+	$(error "*** ERROR: Python must be version 3.")
+endif
+ZA_C:=$(if $(filter 0 1 2 3 4 5 6, $(PYTHON_MIN)),,-c)
 LINTS:=$(foreach py, $(PYS), $(dir $(py)).$(basename $(notdir $(py))).lint)
 EXES:=build/o4 build/gatling build/manifold
 
@@ -50,7 +58,7 @@ build/%: build/%.za
 	rm -fr $</*.dist-info
 	find $< -type d -name __pycache__ | xargs rm -fr
 # Only python3.7 has compress, but it's backwards compatible
-	${PYTHON} -m zipapp -c -p '/usr/bin/env python3' -m $(notdir $@):main $< -o $@
+	${PYTHON} -m zipapp $(ZA_C) -p '/usr/bin/env python3' -m $(notdir $@):main $< -o $@
 
 .%.lint: %.py venv
 	${PYFLAKES} $< || true
@@ -76,6 +84,7 @@ clean:
 	@echo "CLEAN --------------------------------------------"
 	rm -f $(LINTS)
 	rm -fr build
+
 
 ##
 # Copyright (c) 2018, salesforce.com, inc.

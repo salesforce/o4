@@ -1,0 +1,18 @@
+/o4-http/fstat/<changelist>/<depot-path>
+    Return an fstat file.
+
+/o4-http/archive/<changelist>/<depot-path>
+    Return a tarball containing the contents of the depot path at the changelist.
+    It will also include the matching fstat file.
+
+/o4-http/changelists/<depot-path>
+    Return a list of changelists that are known to be good for the path.
+    (Known because the server has generated data for them.)
+
+/o4-http/p4password
+    When the Perforce password for the user that the server users, POST 
+    to this endpoint and supply this JSON document:
+
+    {"previous-password":<previously working password>,
+     "new-password":<what you just changed the password to>
+    }

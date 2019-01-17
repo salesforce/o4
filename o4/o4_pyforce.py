@@ -76,7 +76,7 @@ class Pyforce(object):
                             b'No shelved files in changelist to delete' in res[b'data']):
                         res[b'code'] = b'stat'
                     elif (b'no file(s) at that changelist number' in res[b'data'] or
-                            b'no revision(s) above those at that changelist number' in res[b'data']):
+                          b'no revision(s) above those at that changelist number' in res[b'data']):
                         # print('*** INFO: Skipping premature sync: ', res)
                         res[b'code'] = b'skip'
                     elif b'clobber writable file' in res[b'data']:

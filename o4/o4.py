@@ -844,8 +844,8 @@ def o4_sync(changelist,
         if seed_move:
             syncit += " --move"
 
-    cmd = (f"{fstat}"
-           f"| {manifold_big} {o4bin} drop --checksum --deletes"
+    cmd = (f"{fstat} | {o4bin} keep --deletes"
+           f"| {manifold_big} {o4bin} drop --checksum"
            f"{keep_case}"
            f"{progress}"
            f"{syncit}"
@@ -859,7 +859,10 @@ def o4_sync(changelist,
             consume(Pyforce('-q', 'sync', '-k', f'...@{changelist}'))
             print("*** INFO: Flushing took {:.2f} minutes".format((time.time() - t0) / 60))
 
-    cmd = f"{fstat} | {o4bin} keep --deletes --not-existence {casefilter}" + progress + retry
+    cmd = (f"{fstat} | {o4bin} drop --deletes "
+           f"| {o4bin} keep --not-existence {casefilter}"
+           f"{progress}"
+           f"{retry}")
     run_cmd(cmd)
 
     actual_cl, _ = get_fstat_cache(changelist)

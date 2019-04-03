@@ -858,7 +858,11 @@ def o4_sync(changelist,
             consume(Pyforce('-q', 'sync', '-k', f'...@{changelist}'))
             print("*** INFO: Flushing took {:.2f} minutes".format((time.time() - t0) / 60))
 
-    cmd = (f"{fstat} | {o4bin} drop --deletes --checksum" f"{progress}" f"{retry}")
+    cmd = (f"{fstat} "
+           f"| {o4bin} drop --deletes --checksum"
+           f"{keep_case}"
+           f"{progress}"
+           f"{retry}")
     run_cmd(cmd)
 
     actual_cl, _ = get_fstat_cache(changelist)

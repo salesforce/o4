@@ -844,8 +844,7 @@ def o4_sync(changelist,
         if seed_move:
             syncit += " --move"
 
-    cmd = (f"{fstat} | {o4bin} keep --deletes"
-           f"| {manifold_big} {o4bin} drop --checksum"
+    cmd = (f"{fstat} | {o4bin} drop --not-deletes --existence"
            f"{keep_case}"
            f"{progress}"
            f"{syncit}"
@@ -859,8 +858,9 @@ def o4_sync(changelist,
             consume(Pyforce('-q', 'sync', '-k', f'...@{changelist}'))
             print("*** INFO: Flushing took {:.2f} minutes".format((time.time() - t0) / 60))
 
-    cmd = (f"{fstat} | {o4bin} drop --deletes "
-           f"| {o4bin} keep --not-existence {casefilter}"
+    cmd = (f"{fstat} "
+           f"| {o4bin} drop --deletes --checksum"
+           f"{keep_case}"
            f"{progress}"
            f"{retry}")
     run_cmd(cmd)
@@ -880,8 +880,8 @@ def o4_sync(changelist,
                f"| {o4bin} fail")
         run_cmd(cmd)
     if actual_cl != changelist:
-        print(f'*** WARNING: The changelist {changelist} does not exist. The closest previous was')
-        print(f'             chosen instead: {actual_cl}.')
+        print(f'*** INFO: Changelist {changelist} does not affect this directory.')
+        print(f'          Synced to {actual_cl} (the closest previous change that does).')
     if previous_cl == actual_cl and not force:
         print(f'*** INFO: {os.getcwd()} is already synced to {actual_cl}, use -f to force a'
               f' full verification.')

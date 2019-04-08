@@ -30,8 +30,9 @@ class Pyforce(object):
         self.stderr = NamedTemporaryFile()
         if os.environ.get('DEBUG', ''):
             print(f'## p4', *self.args, file=sys.stderr)
-        self.pope = Popen(
-            ['p4', '-vnet.maxwait=60', '-G'] + self.args, stdout=PIPE, stderr=self.stderr)
+        self.pope = Popen(['p4', '-vnet.maxwait=60', '-G'] + self.args,
+                          stdout=PIPE,
+                          stderr=self.stderr)
         self.transform = Pyforce.to_str
         self.errors = []
 
@@ -125,7 +126,10 @@ class Pyforce(object):
 
         def dec(a):
             if hasattr(a, 'decode'):
-                return a.decode(sys.stdout.encoding)
+                try:
+                    a = a.decode(sys.stdout.encoding)
+                except UnicodeDecodeError:
+                    a = a.decode(sys.stdout.encoding, errors='ignore')
             return a
 
         return {dec(k): dec(v) for k, v in r.items()}

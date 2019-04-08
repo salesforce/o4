@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """
 USAGE:
-  deploy.py [-u TARGET] [--bucket=BUCKET]
+  deploy.py [-u TARGET] [--folder=BUCKET]
   deploy.py -h
 
 Options:
   -h --help         show this help message and exit
   -u TARGET         Target file to deploy [default: all]
-  --bucket=BUCKET   Upload TARGET to s3 bucket
+  --folder=BUCKET   Upload TARGET to s3 bucket
 
 Notes:
     Example deploy:
-      $ python3 deploy.py -u build/manifold --bucket sfdc/o4
+      $ python3 deploy.py -u build/manifold --folder o4-staging
 """
 
 
-def aws_upload(uploads, bucket):
+def aws_upload(uploads, folder):
     import sys
     import os
     try:
@@ -43,4 +43,4 @@ if __name__ == "__main__":
         uploads = [opts['-u']]
 
     print(f'Deploying: {" ".join(uploads)}')
-    aws_upload(uploads, opts['--bucket'])
+    aws_upload(uploads, opts['--folder'])

@@ -126,7 +126,7 @@ class Pyforce(object):
 
         def dec(a):
             if hasattr(a, 'decode'):
-                a = a.decode(sys.stdout.encoding, errors='ignore')
+                return a.decode(sys.stdout.encoding, errors='ignore')
             return a
 
         return {dec(k): dec(v) for k, v in r.items()}

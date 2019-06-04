@@ -3,13 +3,13 @@
 
 import datetime.datetime
 
-VERSION = (1, 2, 37)
-VERSION_STR = '1.2.37'
+VERSION = (1, 2, 38)
+VERSION_STR = '1.2.38'
 PRODUCT = 'o4/version.py'
 
 REQ_MD5 = '43a9b7190217ebf4434beeb068e7a833'
-PY_MD5 = 'dd198e5442470603a35f12359dedaed0'
+PY_MD5 = '370c9ede9ca5e427e83a5a9bd5648509'
 
-TIMESTAMP = datetime.datetime(2019, 6, 3, 22, 51, 5, 582540)
+TIMESTAMP = datetime.datetime(2019, 6, 4, 12, 34, 48, 210855)
 USER_NAME = 'Clarence'
 USER_EMAIL = 'clarence.gardner@salesforce.com'

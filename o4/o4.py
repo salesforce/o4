@@ -94,6 +94,12 @@ from o4_utils import chdir, consume, o4_log, caseful_accurate
 
 CLR = '%c[2K\r' % chr(27)
 
+SYNCED_CL_FILE = '.o4/changelist'
+
+# This file indicates that o4 deigned to exit successfully even though
+# some files didn't get synced (due to particular Perforce situations).
+INCOMPLETE_INDICATOR = '.o4/sync-incomplete'
+
 
 def find_o4bin():
     # "Why not just use which?" "Sparse docker base images."
@@ -809,6 +815,13 @@ def o4_sync(changelist,
               f' full verification.')
         return
 
+    if os.path.exists(INCOMPLETE_INDICATOR):
+        # Remove the indicator. If it is recreated, we will not create the
+        # changelist file because the system is not exactly at that changelist.
+        os.remove(INCOMPLETE_INDICATOR)
+    if os.path.exists(SYNCED_CL_FILE):
+        os.remove(SYNCED_CL_FILE)
+
     has_open = list(Pyforce('opened', '...'))
     openf = NamedTemporaryFile(dir='.o4', mode='w+t')
     if has_open:
@@ -881,8 +894,11 @@ def o4_sync(changelist,
     run_cmd(cmd)
 
     actual_cl, _ = get_fstat_cache(changelist)
-    with open('.o4/changelist', 'wt') as fout:
-        print(actual_cl, file=fout)
+    try:
+        os.remove(INCOMPLETE_INDICATOR)
+    except FileNotFoundError:
+        with open(SYNCED_CL_FILE, 'wt') as fout:
+            print(actual_cl, file=fout)
 
     if seed or not quick:
         print("*** INFO: Sync is now locally complete, verifying server havelist.")
@@ -1006,6 +1022,8 @@ def o4_fail():
         err_print('\n'.join(sorted(passthroughs)))
         err_print(ftr)
         if not files:
+            with open(INCOMPLETE_INDICATOR, 'w') as f:
+                pass
             err_print(f'{CLR} o4 IS SUCCEEDING EVEN THOUGH SOME FILES ARE NOT UP-TO-DATE')
             err_print(ftr)
             sys.exit(0)

@@ -30,9 +30,8 @@ class Pyforce(object):
         self.stderr = NamedTemporaryFile()
         if os.environ.get('DEBUG', ''):
             print(f'## p4', *self.args, file=sys.stderr)
-        self.pope = Popen(['p4', '-vnet.maxwait=60', '-G'] + self.args,
-                          stdout=PIPE,
-                          stderr=self.stderr)
+        self.pope = Popen(
+            ['p4', '-vnet.maxwait=60', '-G'] + self.args, stdout=PIPE, stderr=self.stderr)
         self.transform = Pyforce.to_str
         self.errors = []
 
@@ -50,7 +49,9 @@ class Pyforce(object):
         Certain errors are not really errors, it's just p4 being
         silly. Such as the error "No files to reconcile" when you
         reconcile files that have the correct content. Such errors are
-        converted to code=stat and passed on.
+        converted to code=stat and passed on. Some may also produce a
+        '#o4pass'-prefixed line out stdout, which, in a complete run,
+        will make their way to "o4 fail" and be reported.
         """
         import marshal
         try:
@@ -65,7 +66,8 @@ class Pyforce(object):
                     elif (b"can't move (already opened for edit)" in data or
                           b"is opened for add and can't be replaced" in data or
                           b"- resolve skipped" in data):
-                        res[b'code'] = b'error'
+                        res[b'code'] = b'stat'
+                        print(f'#o4pass-warn#{data.decode("utf-8",errors="ignore")}')
                 if res.get(b'code') != b'error':
                     return self.transform(res)
                 if b'data' in res:

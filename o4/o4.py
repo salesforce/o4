@@ -155,6 +155,9 @@ def o4_seed_from(seed_dir, seed_fstat, op):
     target_dir = os.getcwd()
     with chdir(seed_dir):
         for line in sys.stdin:
+            if line.startswith('#o4pass'):
+                print(line, end='')
+                continue
             f = fstat_split(line)
             if not f:
                 continue
@@ -353,6 +356,9 @@ def o4_drop_have(verbose=False):
     # We have to wait with pulling the server havelist until we have the input in its entirety
     lines = sys.stdin.read().splitlines()
     for line in lines:
+        if line.startswith('#o4pass'):
+            print(line)
+            continue
         if not have:
             if have is not None:
                 print(line)
@@ -460,7 +466,11 @@ def o4_filter(filtertype, filters, verbose):
         sys.exit(f"*** ERROR: Invalid filtertype: {filtertype}")
 
     try:
-        for row in map(fstat_split, sys.stdin):
+        for line in sys.stdin:
+            if line.startswith('#o4pass'):
+                print(line, end='')
+                continue
+            row = fstat_split(line)
             if row:
                 if combo_func(row):
                     print(fstat_join(row))
@@ -488,7 +498,11 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
 
     tmpf = NamedTemporaryFile(dir='.o4')
     fstats = []
-    for f in map(fstat_split, sys.stdin.read().splitlines()):
+    for line in sys.stdin.read().splitlines():
+        if line.startswith('#o4pass'):
+            print(line)
+            continue
+        f = fstat_split(line)
         if f and caseful_accurate(f[F_PATH]):
             fstats.append(f)
         elif f:
@@ -570,6 +584,7 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
                         errs.append(res)
             if errs:
                 raise LogAndAbort('Unexpected reply from p4')
+
             if len(p4paths) == len(fstats):
                 raise LogAndAbort('Nothing recognized from p4')
         except P4Error as e:
@@ -955,21 +970,47 @@ def o4_clean(changelist, quick=False, resume=False, discard=False):
 
 def o4_fail():
     files = []
+    passthroughs = []
     n = 0
-    for f in map(fstat_split, sys.stdin):
+    for line in sys.stdin:
+        if line.startswith('#o4pass-'):
+            msgtype, _, msg = line.replace('#o4pass-', '').partition('#')
+            if msgtype == 'warn':
+                passthroughs.append(msg)
+            continue
+        f = fstat_split(line)
         if not f:
             continue
         n += 1
         if n < 100:
             files.append(f"  {f[F_PATH]}#{f[F_REVISION]}")
+
+    if not files and not passthroughs:
+        sys.exit(0)
+
+    err_print()
+    hdr = ' o4 ERROR ' if files else ' o4 WARNING '
+    l = (78 - len(hdr)) // 2
+    hdr = '*' * l + hdr + '*' * l
+    ftr = '*' * len(hdr)
+    err_print(f'{CLR}{hdr}')
+
     if files:
-        dash = '-' * 52
-        err_print(f"\n{CLR}*** ERROR: These files did not get synced correctly:\n{dash}")
+        err_print('These files did not get processed by the o4 pipeline:')
         err_print('\n'.join(sorted(files)))
         if len(files) != n:
-            err_print(f"  ...and {n-len(files)} others!")
-        err_print(dash)
-        sys.exit(f"{CLR}*** ERROR: Pipeline ended with {n} fstat lines.")
+            err_print(f'  ...and {n-len(files)} others!')
+        err_print(f'\n{ftr}')
+
+    if passthroughs:
+        err_print('\n'.join(sorted(passthroughs)))
+        err_print(ftr)
+        if not files:
+            err_print(f'{CLR} o4 IS SUCCEEDING EVEN THOUGH SOME FILES ARE NOT UP-TO-DATE')
+            err_print(ftr)
+            sys.exit(0)
+
+    sys.exit(f"{CLR}*** ERROR: Pipeline ended with {n} fstat lines.")
 
 
 def o4_head(paths):

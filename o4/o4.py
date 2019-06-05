@@ -894,9 +894,9 @@ def o4_sync(changelist,
     run_cmd(cmd)
 
     actual_cl, _ = get_fstat_cache(changelist)
-    try:
+    if os.path.exists(INCOMPLETE_INDICATOR):
         os.remove(INCOMPLETE_INDICATOR)
-    except FileNotFoundError:
+    else:
         with open(SYNCED_CL_FILE, 'wt') as fout:
             print(actual_cl, file=fout)
 
@@ -1028,7 +1028,8 @@ def o4_fail():
             err_print(ftr)
             sys.exit(0)
 
-    sys.exit(f"{CLR}*** ERROR: Pipeline ended with {n} fstat lines.")
+    s = '' if n == 1 else 's'
+    sys.exit(f'{CLR}*** ERROR: Pipeline ended with {n} file{s} rejected.')
 
 
 def o4_head(paths):

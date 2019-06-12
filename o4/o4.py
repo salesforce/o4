@@ -1012,19 +1012,20 @@ def o4_fail():
     err_print(f'{CLR}{hdr}')
 
     if files:
-        err_print('These files did not get processed by the o4 pipeline:')
+        err_print('These files did not sync and are ERRORs')
         err_print('\n'.join(sorted(files)))
         if len(files) != n:
             err_print(f'  ...and {n-len(files)} others!')
         err_print(f'\n{ftr}')
 
     if passthroughs:
+        err_print('These files did not sync and are WARNINGs')
         err_print('\n'.join(sorted(passthroughs)))
         err_print(ftr)
         if not files:
             with open(INCOMPLETE_INDICATOR, 'w') as f:
                 pass
-            err_print(f'{CLR} o4 IS SUCCEEDING EVEN THOUGH SOME FILES ARE NOT UP-TO-DATE')
+            err_print(f'{CLR} o4 IS EXITING WITH SUCCESS EVEN THOUGH THOSE FILES ARE NOT UP-TO-DATE')
             err_print(ftr)
             sys.exit(0)
 

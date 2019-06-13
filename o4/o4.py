@@ -745,6 +745,7 @@ def o4_sync(changelist,
             msg = [f"{CLR}*** ERROR: Pipeline failed in {cwd}:"]
             failures = []
             for status, cmd in zip(fails, cmd):
+                cmd = cmd.replace(o4bin, 'o4')
                 if status == '1':
                     status = ' FAILED '
                     failures.append(cmd)

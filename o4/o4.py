@@ -743,10 +743,17 @@ def o4_sync(changelist,
                 os.remove('.o4-pipefails')
             cmd = cmd.split('|')
             msg = [f"{CLR}*** ERROR: Pipeline failed in {cwd}:"]
+            failures = []
             for status, cmd in zip(fails, cmd):
-                status = ' FAILED ' if status == '1' else ' OK     '
+                if status == '1':
+                    status = ' FAILED '
+                    failures.append(cmd)
+                else:
+                    status = ' OK     '
                 msg.append(f'{status} {cmd}')
-            err_print('\n'.join(msg))
+            # Print the process list only if something besides "fail" failed.
+            if len(failures) > 1 or not failures[0].endswith('o4 fail'):
+                err_print('\n'.join(msg))
             sys.exit(1)
 
     def gat(cmd):
@@ -1025,10 +1032,13 @@ def o4_fail():
         if not files:
             with open(INCOMPLETE_INDICATOR, 'w') as f:
                 pass
-            err_print(f'{CLR} o4 IS EXITING WITH SUCCESS EVEN THOUGH THOSE FILES ARE NOT UP-TO-DATE')
+            err_print(
+                f'{CLR} o4 IS EXITING WITH SUCCESS EVEN THOUGH THOSE FILES ARE NOT UP-TO-DATE')
             err_print(ftr)
             sys.exit(0)
 
+    err_print('BECAUSE o4 DID NOT COMPLETE, THERE MAY BE OTHER FILES')
+    err_print('BESIDES THOSE LISTED THAT ARE NOT CORRECTLY SYNCED.')
     s = '' if n == 1 else 's'
     sys.exit(f'{CLR}*** ERROR: Pipeline ended with {n} file{s} rejected.')
 

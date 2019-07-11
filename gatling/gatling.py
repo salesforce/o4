@@ -171,10 +171,9 @@ def distribute(cmd, max_bytes, max_procs, chunk_size, round_robin, verbose):
                 if not p:
                     if verbose:
                         running = len(p_filled) + len(p_open)
-                        print(
-                            f"# {my_name} STARTED A PROCESS (1 + {running} + {len(res)}):",
-                            *cmd,
-                            file=sys.stderr)
+                        print(f"# {my_name} STARTED A PROCESS (1 + {running} + {len(res)}):",
+                              *cmd,
+                              file=sys.stderr)
                     p = Popen(cmd, encoding=stdout.encoding, stdin=PIPE, stdout=PIPE, stderr=PIPE)
                     p._n = 0
                     p._t0 = time()
@@ -200,23 +199,21 @@ def distribute(cmd, max_bytes, max_procs, chunk_size, round_robin, verbose):
                     p_filled.append(p)
                     if verbose and ptd and td:
                         running = len(p_filled) + len(p_open)
-                        print(
-                            f"# {my_name} PROCESS LIMIT {p._n:,}/{max_bytes:,}",
-                            f"({p._n/ptd:.2f} kb/s).",
-                            f"INPUT: {b_in:,} ({b_in/td:.2f} kb/s) OUTPUT: {not_done[0]:,}.",
-                            f"PROCESSES: {running}/{running+len(res)}",
-                            file=sys.stderr)
+                        print(f"# {my_name} PROCESS LIMIT {p._n:,}/{max_bytes:,}",
+                              f"({p._n/ptd:.2f} kb/s).",
+                              f"INPUT: {b_in:,} ({b_in/td:.2f} kb/s) OUTPUT: {not_done[0]:,}.",
+                              f"PROCESSES: {running}/{running+len(res)}",
+                              file=sys.stderr)
                     while len(p_filled) == max_procs:
                         done = [d for d in p_filled if d.poll() is not None]
                         if done and verbose:
                             print(f"# {my_name} CLOSED {len(done)} PROCESSES", file=sys.stderr)
                         for d in done:
                             if verbose and p._t0 != t1:
-                                print(
-                                    f"# {my_name} CLOSED PROCESS INPUT: {p._n:,} TIME:",
-                                    f"{t1-p._t0:.1f}/{t1-p._t1:.1f}",
-                                    f"KB/S: {p._n/(t1-p._t0)/1024:.2f}",
-                                    file=sys.stderr)
+                                print(f"# {my_name} CLOSED PROCESS INPUT: {p._n:,} TIME:",
+                                      f"{t1-p._t0:.1f}/{t1-p._t1:.1f}",
+                                      f"KB/S: {p._n/(t1-p._t0)/1024:.2f}",
+                                      file=sys.stderr)
                             p_filled.remove(d)
                             res.append(d.returncode)
                         if not done:

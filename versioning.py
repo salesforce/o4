@@ -61,16 +61,15 @@ def main():
         with open(opts['-o'], 'rt') as fin:
             lines = [line for line in fin if '=' in line]
     except FileNotFoundError:
-        lines = TEMPLATE.format(
-            major=1,
-            minor=0,
-            step=0,
-            ts=datetime.now(),
-            rm='',
-            py='',
-            name=name,
-            mail=mail,
-            product=opts['-o'])
+        lines = TEMPLATE.format(major=1,
+                                minor=0,
+                                step=0,
+                                ts=datetime.now(),
+                                rm='',
+                                py='',
+                                name=name,
+                                mail=mail,
+                                product=opts['-o'])
         lines = [line + '\n' for line in lines.split('\n') if '=' in line]
     cfg.read_string('[DEFAULT]\n' + ''.join(lines))
     cfg = cfg['DEFAULT']
@@ -87,16 +86,15 @@ def main():
     with open(opts['-o'], 'wt') as fout:
         try:
             fout.write(
-                TEMPLATE.format(
-                    major=major,
-                    minor=minor,
-                    step=step,
-                    ts=datetime.now(),
-                    rm=rm,
-                    py=py,
-                    name=name,
-                    mail=mail,
-                    product=opts['-o']))
+                TEMPLATE.format(major=major,
+                                minor=minor,
+                                step=step,
+                                ts=datetime.now(),
+                                rm=rm,
+                                py=py,
+                                name=name,
+                                mail=mail,
+                                product=opts['-o']))
             print(f"{opts['-o']}: {major}.{minor}.{step}")
         except:
             from traceback import print_exc

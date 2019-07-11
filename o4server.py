@@ -104,11 +104,10 @@ def get_fstat(changelist, depot):
 
         status, fstat = workers.apply(o4package.get_fstat, ('//' + depot, changelist, nearby))
         if status == 200:
-            return send_file(
-                fstat,
-                mimetype='application/gzip',
-                as_attachment=True,
-                attachment_filename=os.path.basename(fstat))
+            return send_file(fstat,
+                             mimetype='application/gzip',
+                             as_attachment=True,
+                             attachment_filename=os.path.basename(fstat))
         if status // 100 == 3:
             fstat = os.path.basename(fstat)
             ctx['redir_cl'] = redir_cl = fstat.partition('.')[0]
@@ -129,11 +128,10 @@ def get_archive(changelist, depot):
             ctx['redir_cl'] = redir_cl = archive.partition('.')[0]
             return redirect(url('archive', int(redir_cl), depot), code)
         if archive:
-            return send_file(
-                archive,
-                mimetype='application/gzip',
-                as_attachment=True,
-                attachment_filename=os.path.basename(archive))
+            return send_file(archive,
+                             mimetype='application/gzip',
+                             as_attachment=True,
+                             attachment_filename=os.path.basename(archive))
         if code == 202:
             return 'In progress', 202
         abort(code)

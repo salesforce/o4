@@ -30,8 +30,9 @@ class Pyforce(object):
         self.stderr = NamedTemporaryFile()
         if os.environ.get('DEBUG', ''):
             print(f'## p4', *self.args, file=sys.stderr)
-        self.pope = Popen(
-            ['p4', '-vnet.maxwait=60', '-G'] + self.args, stdout=PIPE, stderr=self.stderr)
+        self.pope = Popen(['p4', '-vnet.maxwait=60', '-G'] + self.args,
+                          stdout=PIPE,
+                          stderr=self.stderr)
         self.transform = Pyforce.to_str
         self.errors = []
 

@@ -1,5 +1,4 @@
 PYTHON:=venv/bin/python
-# polka
 VULTURE:=venv/bin/vulture
 YAPF:=venv/bin/yapf
 PYFLAKES:=venv/bin/pyflakes

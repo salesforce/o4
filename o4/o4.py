@@ -823,7 +823,7 @@ def o4_sync(changelist,
     prep = None
     if is_git_hybrid():
         # TODO: Is this disabled by --move or -s or -f?
-        prep = git_master_prep(_depot_path(), previous_cl, changelist)
+        prep = git_master_prep(_depot_path(), changelist)
 
     has_open = list(Pyforce('opened', '...'))
     openf = NamedTemporaryFile(dir='.o4', mode='w+t')

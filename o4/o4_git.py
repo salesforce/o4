@@ -93,7 +93,13 @@ def git_o4_import(prep_res):
         if token != 'd':
             err_check_call(['git', 'add', fs[F_PATH]])
         else:
-            err_check_call(['git', 'rm', fs[F_PATH]])
+            res = run(['git', 'rm', '-f', fs[F_PATH]],
+                      universal_newlines=True,
+                      stdout=PIPE,
+                      stderr=STDOUT)
+            if res.returncode and 'did not match any files' not in res.stdout:
+                err_print(res.stdout)
+                sys.exit('*** ERROR: Failed to delete file from git.')
 
     err_print(f"*** INFO: Committing changes from o4 to git {prep_res['merge_target']}...")
     res = run([

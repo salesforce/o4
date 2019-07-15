@@ -72,6 +72,7 @@ def git_o4_import(prep_res):
         with open('.p4_original_cl', 'wt') as fout:
             fout.write(f"{prep_res['target_changelist']}")
         err_check_call(['git', 'add', '.p4_original_cl'])
+    adding, removing = [], []
     for i, fs in enumerate(
             fstat_from_csv(f".o4/{prep_res['target_changelist']}.fstat.gz", fstat_split)):
         if not fs:
@@ -81,38 +82,50 @@ def git_o4_import(prep_res):
                 err_print(" OK")
             break
         token = '.'
-        if fs[F_REVISION] == '1':
-            token = 'a'
-        elif not fs[F_CHECKSUM]:
+        if not fs[F_CHECKSUM]:
             token = 'd'
+        elif fs[F_REVISION] == '1':
+            token = 'a'
         # TODO: Check if renames screw up or git figures it out
         err_print(token, end='')
         if i and not (i % 50):
             err_print(f" {i}")
         sys.stderr.flush()
         if token != 'd':
-            err_check_call(['git', 'add', fs[F_PATH]])
+            adding.append(fs[F_PATH])
         else:
-            res = run(['git', 'rm', '-f', fs[F_PATH]],
-                      universal_newlines=True,
-                      stdout=PIPE,
-                      stderr=STDOUT)
-            if res.returncode and 'did not match any files' not in res.stdout:
-                err_print(res.stdout)
-                sys.exit('*** ERROR: Failed to delete file from git.')
-
-    err_print(f"*** INFO: Committing changes from o4 to git {prep_res['merge_target']}...")
-    res = run([
-        'git', 'commit', '-m',
-        (f"o4 git import {prep_res['depot_path']} from CL {prep_res['old_changelist']} to"
-         f" {prep_res['target_changelist']}")
-    ],
-              universal_newlines=True,
-              stdout=PIPE,
-              stderr=STDOUT)
-    err_print("*** INFO: Git response:", res.stdout.replace("\n", "\n    "))
-    if res.returncode and 'nothing to commit' not in res.stdout:
-        sys.exit("*** ERROR: Failed to commit imported changes to git.")
+            removing.append(fs[F_PATH])
+    if adding or removing:
+        chunk = 200
+        if adding:
+            err_print(f"*** INFO: Adding {len(adding)} new/updated files to git...", end=' ')
+            while adding:
+                err_print(len(adding), end=' ')
+                sys.stderr.flush()
+                err_check_call(['git', 'add'] + adding[:chunk])
+                del adding[:chunk]
+            err_print('')
+        if removing:
+            err_print(f"*** INFO: Removing {len(adding)} deleted files from git...", end=' ')
+            while removing:
+                err_print(len(adding), end=' ')
+                sys.stderr.flush()
+                err_check_call(['git', 'rm', '-f', '--ignore-unmatch'] + removing[:chunk])
+                del removing[:chunk]
+            err_print('')
+        err_print(f"*** INFO: Committing changes from o4 to git {prep_res['merge_target']}...")
+        res = run([
+            'git', 'commit', '-m',
+            (f"o4 git import {prep_res['depot_path']} from CL {prep_res['old_changelist']} to"
+             f" {prep_res['target_changelist']}")
+        ],
+                  universal_newlines=True,
+                  stdout=PIPE,
+                  stderr=STDOUT)
+        err_print(f"*** {'WARNING' if res.returncode else 'INFO'}: Git response:",
+                  res.stdout.replace("\n", "\n    "))
+        if res.returncode and 'nothing to commit' not in res.stdout:
+            sys.exit("*** ERROR: Failed to commit imported changes to git.")
 
 
 def git_master_restore(prep_res):

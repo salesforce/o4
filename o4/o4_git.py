@@ -64,7 +64,9 @@ def git_master_prep(depot_path, target_changelist, merge_target='master'):
 
 
 def git_o4_import(prep_res):
-    err_print("*** INFO: Importing changes from perforce to git...")
+    err_print(f"*** INFO: Importing changes on {prep_res['depot_path']}"
+              f"@{prep_res['old_changelist']},{prep_res['target_changelist']} "
+              f"from perforce to git...")
     if not prep_res['old_changelist']:
         err_print("*** WARNING: There was no original import changelist, creating .p4_original_cl")
         with open('.p4_original_cl', 'wt') as fout:

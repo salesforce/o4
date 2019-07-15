@@ -72,7 +72,7 @@ def git_o4_import(prep_res):
         with open('.p4_original_cl', 'wt') as fout:
             fout.write(f"{prep_res['target_changelist']}")
         err_check_call(['git', 'add', '.p4_original_cl'])
-    adding, removing = [], []
+    adding, updating, removing = [], [], []
     for i, fs in enumerate(
             fstat_from_csv(f".o4/{prep_res['target_changelist']}.fstat.gz", fstat_split)):
         if not fs:
@@ -84,27 +84,30 @@ def git_o4_import(prep_res):
         token = '.'
         if not fs[F_CHECKSUM]:
             token = 'd'
+            removing.append(fs[F_PATH])
         elif fs[F_REVISION] == '1':
             token = 'a'
+            adding.append(fs[F_PATH])
+        else:
+            updating.append(fs[F_PATH])
         # TODO: Check if renames screw up or git figures it out
         err_print(token, end='')
         if i and not (i % 50):
             err_print(f" {i}")
         sys.stderr.flush()
-        if token != 'd':
-            adding.append(fs[F_PATH])
-        else:
-            removing.append(fs[F_PATH])
-    if adding or removing:
+    if adding or updating or removing:
         chunk = 200
         if adding:
-            err_print(f"*** INFO: Adding {len(adding)} new/updated files to git...", end=' ')
+            err_print(f"*** INFO: Adding {len(adding)} new files to git...", end=' ')
             while adding:
                 err_print(len(adding), end=' ')
                 sys.stderr.flush()
                 err_check_call(['git', 'add'] + adding[:chunk])
                 del adding[:chunk]
             err_print('')
+        if updating:
+            err_print(f"*** INFO: Updating {len(updating)} updated files in git...")
+            err_check_call(['git', 'add', '-u'])
         if removing:
             err_print(f"*** INFO: Removing {len(adding)} deleted files from git...", end=' ')
             while removing:

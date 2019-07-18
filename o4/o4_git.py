@@ -85,6 +85,7 @@ def git_o4_import(prep_res):
                 continue
             if fs[F_PATH] in untracked and fs[F_CHECKSUM]:
                 if os.lstat(fs[F_PATH]).st_size > 1e6:
+                    # TODO: This should probably be configurable
                     lfs.append(fs[F_PATH])
                 else:
                     adding.append(fs[F_PATH])

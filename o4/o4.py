@@ -7,7 +7,7 @@ Usage:
   o4 seed-from <dir> [--fstat <fstat>] [--move]
   o4 (drop|keep|keep-any) [-v] [--case|--not-case] [--open|--not-open] [--existence|--not-existence] [--checksum|--not-checksum] [--deletes|--not-deletes]
   o4 drop --havelist
-  o4 [-q] pyforce [--debug] [--no-rev] [--] <p4args>...
+  o4 [-q] pyforce [--writable] [--debug] [--no-rev] [--] <p4args>...
   o4 head <paths>...
   o4 progress
   o4 fail
@@ -54,6 +54,8 @@ Option:
   -f            Force all files to be verified and synced.
   +o            Do not sync open files.
   pyforce       Use pyforce to execute the p4 command (<p4args>...) on fstat on stdin.
+  --writable    Make files writable after sync and switch to read only before sync. Implies that
+                no .bak files are made of writable files.
   --no-rev      Send the depot path to p4 without the revision number.
   --debug       Display the pyforce response objects on stderr.
   <p4args>      List of arguments for the p4 CLI.
@@ -481,7 +483,7 @@ def o4_filter(filtertype, filters, verbose):
         raise
 
 
-def o4_pyforce(debug, no_revision, args: list, quiet=False):
+def o4_pyforce(debug, no_revision, writable, args: list, quiet=False):
     """
     Encapsulates Pyforce, does book keeping to ensure that all files
     that should be operated on are in fact dealt with by p4. Handles
@@ -491,14 +493,19 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
 
     from tempfile import NamedTemporaryFile
     from collections import defaultdict
+    from stat import S_IWUSR, S_IFREG
 
     class LogAndAbort(Exception):
         'Dumps debug information on errors.'
 
-    o4_log('pyforce', no_revision=no_revision, quiet=quiet, *args)
+    a_plus_w = 0o222
+    a_minus_w = (0o777 ^ a_plus_w) | S_IFREG
+
+    o4_log('pyforce', no_revision=no_revision, writable=writable, quiet=quiet, *args)
 
     tmpf = NamedTemporaryFile(dir='.o4')
     fstats = []
+    orig_mode = {}
     for line in sys.stdin.read().splitlines():
         if line.startswith('#o4pass'):
             print(line)
@@ -506,6 +513,10 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
         f = fstat_split(line)
         if f and caseful_accurate(f[F_PATH]):
             fstats.append(f)
+            s = os.stat(f[F_PATH])
+            if s.st_mode & S_IWUSR:
+                orig_mode[f[F_PATH]] = s.st_mode
+                os.chmod(s.st_mode & a_minus_w)
         elif f:
             err_print(f"*** WARNING: Pyforce is skipping {f[F_PATH]} because it is casefully"
                       " mismatching a local file.")
@@ -566,6 +577,11 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
                     errs.append(res)
                     continue
                 res_str = Pyforce.unescape(res_str)
+                try:
+                    os.chmod(res_str, orig_mode.pop(res_str))
+                except KeyError:
+                    pass
+
                 for i, f in enumerate(fstats):
                     if f"{head}/{f[F_PATH]}" in res_str:
                         repeats[f"{head}/{f[F_PATH]}"].append(res)
@@ -627,6 +643,9 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
                     # its objects before operation, as in "And for my next act... !"
                     # This premature printing leads to false checksum errors during sync.
                     print(fstat_join(fstat))
+    # TODO: This should probably be in a finally clause
+    for fname, omode in orig_mode.items():
+        os.chmod(fname, omode)
 
 
 def o4_sync(changelist,
@@ -820,11 +839,6 @@ def o4_sync(changelist,
     if os.path.exists(SYNCED_CL_FILE):
         os.remove(SYNCED_CL_FILE)
 
-    prep = None
-    if is_git_hybrid():
-        # TODO: Is this disabled by --move or -s or -f?
-        prep = git_master_prep(_depot_path(), changelist)
-
     has_open = list(Pyforce('opened', '...'))
     openf = NamedTemporaryFile(dir='.o4', mode='w+t')
     if has_open:
@@ -857,6 +871,12 @@ def o4_sync(changelist,
             print(f"*** INFO: Not syncing {len(has_open)} files opened for edit.")
     else:
         print(f"{CLR}*** INFO: There are no opened files.")
+
+    prep = None
+    if is_git_hybrid():
+        # TODO: Is this disabled by --move or -s or -f?
+        prep = git_master_prep(_depot_path(), changelist)
+        pyforce = f"{pyforce} --writable"  # Make sure this is not affixed for opened files
 
     quiet = '-q' if seed else ''
     retry = (f"| {manifold_big} {o4bin} drop --checksum"
@@ -1167,7 +1187,8 @@ def main():
                 ), opts['-v'])
         if opts['pyforce']:
             ran = True
-            o4_pyforce(opts['--debug'], opts['--no-rev'], opts['<p4args>'], opts['-q'])
+            o4_pyforce(opts['--debug'], opts['--no-rev'], opts['--writable'], opts['<p4args>'],
+                       opts['-q'])
         if opts['progress']:
             ran = True
             progress_show(os.path.join(os.getcwd(), '.o4/.fstat'))

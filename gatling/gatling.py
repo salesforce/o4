@@ -14,7 +14,7 @@ is invoked or by an optional first argument (gatling|manifold):
  * gatling: best for commands that communicate with remote servers
    (e.g. p4)
 
- * manifold: best for commands that consume mainly local resources 
+ * manifold: best for commands that consume mainly local resources
    (e.g. md5)
 
 In manifold mode a child process is created for each block read, until
@@ -193,7 +193,7 @@ def distribute(cmd, max_bytes, max_procs, chunk_size, round_robin, verbose):
                 if p._n >= max_bytes:
                     t1 = time()
                     p._t1 = t1
-                    td = (t1 - t0) * 1024
+                    td = (t1-t0) * 1024
                     ptd = (t1 - p._t0) * 1024
                     p.stdin.close()
                     p_filled.append(p)
@@ -258,17 +258,16 @@ def main():
     # Determine my_name from the invoked name (zeroth argument) or
     # the first argument if it is gatling or manifold.
     my_name, _ = os.path.splitext(os.path.basename(sys.argv[0]))
-    if '--' not in args:
-        for i, arg in enumerate(args):
-            if not i and arg in ('gatling', 'manifold'):
-                my_name = arg
-                continue
-            if not arg.startswith('-'):
-                try:
-                    int(arg)
-                except ValueError:
-                    args.insert(i, '--')
-                    break
+    for i, arg in enumerate(args):
+        if not i and arg in ('gatling', 'manifold'):
+            my_name = arg
+            continue
+        if not arg.startswith('-'):
+            try:
+                int(arg)
+            except ValueError:
+                args.insert(i, '--')
+                break
     opts = docopt(__doc__.replace('{PROGRAM}', my_name), args)
     if not opts['gatling'] and not opts['manifold']:
         opts['manifold'] = my_name.startswith('manifold')

@@ -139,6 +139,8 @@ def git_o4_import(prep_res):
               res.stdout.replace("\n", "\n    "))
     if res.returncode and 'nothing to commit' not in res.stdout:
         sys.exit("*** ERROR: [git] Failed to commit imported changes to git.")
+    with open('.o4/hybrid_changelist', 'at+') as fout:
+        print(prep_res['target_changelist'], file=fout)
 
 
 def git_master_restore(prep_res):

@@ -43,7 +43,7 @@ def git_master_prep(depot_path, target_changelist, merge_target='master'):
 
     old_changelist = previous_hybrid_cl()
     topic = git_current_branch()
-    err_print(f'*** INFO: Stashing local changes on {topic}...')
+    err_print(f'*** INFO: [git] Stashing local changes on {topic}...')
     try:
         stash = txt_check_output([
             'git', 'stash', 'create',
@@ -53,7 +53,7 @@ def git_master_prep(depot_path, target_changelist, merge_target='master'):
         sys.exit("Failed to git stash current changes, that probably means a conflict has to not"
                  " been resolved. You need to deal with that and then retry.")
     if topic != merge_target:
-        err_print(f"*** INFO: Switching to merge target {merge_target}...")
+        err_print(f"*** INFO: [git] Checkout merge target {merge_target}...")
         err_check_call(['git', 'checkout', merge_target])
     return dict(stash=stash,
                 topic=topic,
@@ -64,19 +64,21 @@ def git_master_prep(depot_path, target_changelist, merge_target='master'):
 
 
 def git_o4_import(prep_res):
-    err_print(f"*** INFO: Importing changes on {prep_res['depot_path']}"
-              f"@{prep_res['old_changelist']},{prep_res['target_changelist']} "
-              f"from perforce to git...")
+    if prep_res['old_changelist'] >= prep_res['target_changelist']:
+        err_print(f"*** WARNING: o4 hybrid git sync is not possible for decreasing changelists"
+                  f" ({prep_res['old_changelist']} -> {prep_res['target_changelist']})")
+        return
     if not prep_res['old_changelist']:
         err_print("*** WARNING: There was no original import changelist, creating .p4_original_cl")
         with open('.p4_original_cl', 'wt') as fout:
             fout.write(f"{prep_res['target_changelist']}")
         err_check_call(['git', 'add', '.p4_original_cl'])
+    err_print(f"*** INFO: [git] Importing changes on {prep_res['depot_path']}"
+              f"@{prep_res['old_changelist']},{prep_res['target_changelist']} "
+              f"from perforce to git...")
     res = check_output(['git', 'ls-files', '--others', '--exclude-standard'],
                        universal_newlines=True)
-    if res.returncode:
-        sys.exit(f"*** ERROR: Git could not present untracked files.")
-    untracked = set(res.stdout.strip().splitlines())
+    untracked = set(res.strip().splitlines())
     if untracked:
         adding, lfs = [], []
         for i, fs in enumerate(
@@ -98,14 +100,14 @@ def git_o4_import(prep_res):
         with open('.o4/lfs.txt', 'wt') as fout:
             for a in lfs:
                 print(a, file=fout)
-        err_print(f"*** INFO: Adding {len(adding)} new files, and "
+        err_print(f"*** INFO: [git] Adding {len(adding)} new files, and "
                   f"{len(lfs)} new large files, to git.")
         if lfs:
-            err_print("*** INFO: Tracking LFS files...")
+            err_print("*** INFO: [git] Tracking LFS files...")
             err_check_call(['git', 'lfs', 'track'] + lfs)
             adding.extend(lfs)
         if adding:
-            err_print(f"*** INFO: Adding {len(adding)} new files to git...", end=' ')
+            err_print(f"*** INFO: [git] Adding {len(adding)} new files to git...", end=' ')
             while adding:
                 err_print(len(adding), end=' ')
                 sys.stderr.flush()
@@ -113,17 +115,18 @@ def git_o4_import(prep_res):
                 del adding[:200]
             err_print('')
         if untracked:
-            err_print(f"*** WARNING: There are {len(untracked)} untracked files not covered by o4:")
+            err_print(
+                f"*** WARNING: [git] There are {len(untracked)} untracked files not covered by o4:")
             for u in untracked:
                 err_print("   ", u)
-            err_print("*** WARNING: The above listed files will be addeded to .gitignore")
+            err_print("*** WARNING: [git] The above listed files will be addeded to .gitignore")
             with open('.gitignore', 'at+') as fout:
                 for u in sorted(untracked):
                     print(u, file=fout)
             err_check_call(['git', 'add', '.gitignore'])
-    err_print(f"*** INFO: Updating affected files in git...")
+    err_print(f"*** INFO: [git] Updating affected files in git...")
     err_check_call(['git', 'add', '-u'])
-    err_print(f"*** INFO: Committing changes from o4 to git {prep_res['merge_target']}...")
+    err_print(f"*** INFO: [git] Committing changes from o4 to git {prep_res['merge_target']}...")
     res = run([
         'git', 'commit', '-m',
         (f"o4 git import {prep_res['depot_path']} from CL {prep_res['old_changelist']} to"
@@ -132,28 +135,30 @@ def git_o4_import(prep_res):
               universal_newlines=True,
               stdout=PIPE,
               stderr=STDOUT)
-    err_print(f"*** {'WARNING' if res.returncode else 'INFO'}: Git response:",
+    err_print(f"*** {'WARNING' if res.returncode else 'INFO'}: [git] Response:",
               res.stdout.replace("\n", "\n    "))
     if res.returncode and 'nothing to commit' not in res.stdout:
-        sys.exit("*** ERROR: Failed to commit imported changes to git.")
+        sys.exit("*** ERROR: [git] Failed to commit imported changes to git.")
 
 
 def git_master_restore(prep_res):
+    if prep_res['old_changelist'] >= prep_res['target_changelist']:
+        return
     if git_current_branch() != prep_res['topic']:
-        err_print(f"*** INFO: Returning git to topic branch {prep_res['topic']}...")
+        err_print(f"*** INFO: [git] Returning git to topic branch {prep_res['topic']}...")
         err_check_call(['git', 'checkout', prep_res['topic']])
-        err_print(f"*** INFO: Merging {prep_res['merge_target']} into "
+        err_print(f"*** INFO: [git] Merging {prep_res['merge_target']} into "
                   f"topic branch {prep_res['topic']}...")
-        err_check_call(['git', 'merge', prep_res['merge_target']])
+        err_check_call(['git', 'rebase', prep_res['merge_target']])
 
     if ':' in prep_res['stash']:
         err_print('*** INFO: Popping git stash...')
         try:
             err_check_call(['git', 'stash', 'pop'])
         except CalledProcessError:
-            err_print(
-                "*** WARNING: There was a problem popping the git stash, most likely a conflict.\n"
-                "    Make sure you edit out the conflicts before you attempt to sync again.")
+            err_print("*** WARNING: [git] There was a problem popping the git stash, most likely "
+                      "a conflict.\n"
+                      "    Make sure you edit out the conflicts before you attempt to sync again.")
             return False
     return True
 

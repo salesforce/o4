@@ -83,8 +83,6 @@ from signal import SIGINT
 from errno import EPERM
 import shutil
 
-err_print = functools.partial(print, file=sys.stderr)
-
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from o4_pyforce import Pyforce, P4Error, P4TimeoutError, info as pyforce_info, \
@@ -95,6 +93,7 @@ from o4_progress import progress_iter, progress_show, progress_enabled
 from o4_utils import chdir, consume, o4_log, caseful_accurate
 from o4_git import is_git_hybrid, git_master_prep, git_o4_import, git_master_restore
 
+err_print = functools.partial(print, file=sys.stderr)
 CLR = '%c[2K\r' % chr(27)
 
 SYNCED_CL_FILE = '.o4/changelist'
@@ -394,7 +393,6 @@ def o4_drop_have(verbose=False):
 
 
 def o4_filter(filtertype, filters, verbose):
-    from functools import partial
 
     # Each function implements a filter. It is called with an Fstat tuple.
     # If it "likes" the row (e.g., "checksum" likes the row if the checksum
@@ -513,10 +511,13 @@ def o4_pyforce(debug, no_revision, writable, args: list, quiet=False):
         f = fstat_split(line)
         if f and caseful_accurate(f[F_PATH]):
             fstats.append(f)
-            s = os.stat(f[F_PATH])
-            if s.st_mode & S_IWUSR:
-                orig_mode[f[F_PATH]] = s.st_mode
-                os.chmod(s.st_mode & a_minus_w)
+            try:
+                s = os.stat(f[F_PATH])
+                if s.st_mode & S_IWUSR:
+                    orig_mode[f[F_PATH]] = s.st_mode
+                    os.chmod(f[F_PATH], s.st_mode & a_minus_w)
+            except FileNotFoundError:
+                orig_mode[f[F_PATH]] = None
         elif f:
             err_print(f"*** WARNING: Pyforce is skipping {f[F_PATH]} because it is casefully"
                       " mismatching a local file.")
@@ -578,8 +579,11 @@ def o4_pyforce(debug, no_revision, writable, args: list, quiet=False):
                     continue
                 res_str = Pyforce.unescape(res_str)
                 try:
-                    os.chmod(res_str, orig_mode.pop(res_str))
-                except KeyError:
+                    mode = orig_mode.pop(res_str)
+                    if not mode:
+                        mode = os.stat(res_str).st_mode & a_minus_w
+                    os.chmod(res_str, mode)
+                except (KeyError, FileNotFoundError):
                     pass
 
                 for i, f in enumerate(fstats):
@@ -645,7 +649,12 @@ def o4_pyforce(debug, no_revision, writable, args: list, quiet=False):
                     print(fstat_join(fstat))
     # TODO: This should probably be in a finally clause
     for fname, omode in orig_mode.items():
-        os.chmod(fname, omode)
+        try:
+            if not omode:
+                omode = os.stat(res_str).st_mode & a_minus_w
+            os.chmod(fname, omode)
+        except FileNotFoundError:
+            pass
 
 
 def o4_sync(changelist,
@@ -876,7 +885,7 @@ def o4_sync(changelist,
     if is_git_hybrid():
         # TODO: Is this disabled by --move or -s or -f?
         prep = git_master_prep(_depot_path(), changelist)
-        pyforce = f"{pyforce} --writable"  # Make sure this is not affixed for opened files
+        pyforce = f"{pyforce} --writable --"  # Make sure this is not affixed for opened files
 
     quiet = '-q' if seed else ''
     retry = (f"| {manifold_big} {o4bin} drop --checksum"
@@ -1035,7 +1044,7 @@ def o4_fail():
     err_print()
     hdr = ' o4 ERROR ' if files else ' o4 WARNING '
     l = (78 - len(hdr)) // 2
-    hdr = '*' * l + hdr + '*' * l
+    hdr = '*'*l + hdr + '*'*l
     ftr = '*' * len(hdr)
     err_print(f'{CLR}{hdr}')
 

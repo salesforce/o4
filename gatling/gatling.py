@@ -262,6 +262,8 @@ def main():
         if not i and arg in ('gatling', 'manifold'):
             my_name = arg
             continue
+        if arg == '--':
+            break
         if not arg.startswith('-'):
             try:
                 int(arg)

@@ -3,7 +3,7 @@ Hybrid o4/git commands. Provides a bridge for users that want to migrate or coex
 
 TODO: What to do about read-only perforce and not git?
 """
-from o4_fstat import fstat_from_csv, fstat_split, F_CHANGELIST, F_PATH, F_REVISION, F_CHECKSUM
+from o4_fstat import fstat_from_csv, fstat_split, F_CHANGELIST, F_PATH, F_REVISION, F_FILE_SIZE, F_CHECKSUM
 
 import os
 import sys
@@ -14,6 +14,88 @@ from subprocess import check_call, check_output, CalledProcessError, run, PIPE, 
 err_print = functools.partial(print, file=sys.stderr)
 err_check_call = functools.partial(check_call, stdout=sys.stderr)
 txt_check_output = functools.partial(check_output, universal_newlines=True)
+
+
+def git_hybrid_init():
+    """Call to get started with a blank repo."""
+    from fnmatch import fnmatch
+
+    if os.path.exists('.o4/hybrid_off'):
+        err_print("*** WARNING: Removing .o4/hybrid_off.")
+        os.unlink('.o4/hybrid_off')
+    if is_git_hybrid():
+        return
+    cl = int(open('.o4/changelist').read().strip())
+    if not os.path.isdir('.git'):
+        err_print(f"*** INFO: [git] Initializing for hybrid sync at CL {cl}.")
+        err_check_call(['git', 'init', '.'])
+        err_print("*** INFO: Enabling rerere and LFS.")
+        err_check_call(['git', 'lfs', 'install'])
+        err_check_call(['git', 'config', 'rerere.enable', 'true'])
+        bin_exts = [
+            '*.bin',
+            '*.exe',
+            '*.vdi',
+            '*.jar',
+            '*.war',
+            '*.ttf',
+            '*.mp3',
+            '*.mp4',
+            '*.avi',
+            '*.ogv',
+            '*.7z',
+            '*.rar',
+            '*.zip',
+            '*.tgz',
+            '*.gz',
+            '*.rpm',
+            '*.mmdb',
+            '*.xlt',
+            '*.xls',
+            '*.svg',
+            '*.jpg',
+            '*.png',
+            '*.wsdl',
+            '*.so',
+            '*.so.*',
+        ]
+        for ext in bin_exts:
+            err_print("*** INFO: [git] LFS track", ext)
+            err_check_call(['git', 'lfs', 'track', ext, '--lockable'])
+        with open('.gitignore', 'wt') as fout:
+            print('/.o4', file=fout)
+            print('/.o4-pipefails', file=fout)
+        err_print("*** INFO: Checking fstat for large files (1MB)... ")
+        for i, fs in enumerate(fstat_from_csv(f".o4/{cl}.fstat.gz", fstat_split)):
+            if not fs:
+                continue
+            if i % 10000 == 1:
+                err_print(i, end=' ')
+                sys.stderr.flush()
+            try:
+                if int(fs[F_FILE_SIZE]) >= 1e6:
+                    for ext in bin_exts:
+                        if fnmatch(fs[F_PATH], ext):
+                            break
+                    else:
+                        err_print("*** INFO: [git] LFS track", fs[F_PATH],
+                                  f"{int(fs[F_FILE_SIZE])/1e6:.2f}MB")
+                        err_check_call(['git', 'lfs', 'track', fs[F_PATH], 'lockable'])
+            except ValueError:
+                # symlink
+                pass
+        err_check_call(['git', 'add', '.gitattributes'])
+        err_check_call(['git', 'add', '.gitignore'])
+        err_check_call(['git', 'commit', '-m', 'Initialized config, lfs, ignore.'])
+    with open('.hybrid_changelist', 'wt') as fout:
+        print(cl, file=fout)
+    err_check_call(['git', 'add', '.hybrid_changelist'])
+    err_check_call(['git', 'add', '.'])
+    where, sep, _ = txt_check_output(['p4', 'where', '.']).partition(' //')
+    if sep != ' //':
+        where = '<unknown>'
+    err_check_call(['git', 'commit', '-m', f"Initial import from o4 {where} @ {cl}"])
+    err_print("*** INFO: [git] Hybrid initialized successfully")
 
 
 def git_current_branch():
@@ -30,12 +112,9 @@ def previous_hybrid_cl():
         a file in git and a local file.
     """
     try:
-        return int(open('.o4/hybrid_changelist').read().strip())
+        return int(open('.hybrid_changelist').read().strip())
     except FileNotFoundError:
-        try:
-            return int(open('.p4_original_cl').read().strip())
-        except FileNotFoundError:
-            return 0
+        return 0
 
 
 def git_master_prep(depot_path, target_changelist, merge_target='master'):

@@ -9,6 +9,7 @@ Usage:
   o4 drop --havelist
   o4 [-q] pyforce [--writable] [--debug] [--no-rev] [--] <p4args>...
   o4 head <paths>...
+  o4 git-hybrid
   o4 progress
   o4 fail
 
@@ -61,6 +62,7 @@ Option:
   <p4args>      List of arguments for the p4 CLI.
   head          Update .o4/head files in listed paths.
   <paths>       List of paths to visit.
+  git-hybrid    Enables git hybrid sync if it is not, otherwise success.
   progress      Show progress based on .o4/.fstat.
   fail          Fails if there were fstat on stdin.
   -v            Be verbose.
@@ -91,7 +93,7 @@ from o4_fstat import fstat_from_csv, fstat_iter, fstat_path, \
     fstat_split, fstat_join, get_fstat_cache, F_REVISION, F_FILE_SIZE, F_CHECKSUM, F_PATH
 from o4_progress import progress_iter, progress_show, progress_enabled
 from o4_utils import chdir, consume, o4_log, caseful_accurate
-from o4_git import is_git_hybrid, git_master_prep, git_o4_import, git_master_restore
+from o4_git import is_git_hybrid, git_master_prep, git_o4_import, git_master_restore, git_hybrid_init
 
 err_print = functools.partial(print, file=sys.stderr)
 CLR = '%c[2K\r' % chr(27)
@@ -1198,6 +1200,9 @@ def main():
             ran = True
             o4_pyforce(opts['--debug'], opts['--no-rev'], opts['--writable'], opts['<p4args>'],
                        opts['-q'])
+        if opts['git-hybrid']:
+            ran = True
+            git_hybrid_init()
         if opts['progress']:
             ran = True
             progress_show(os.path.join(os.getcwd(), '.o4/.fstat'))

@@ -7,8 +7,9 @@ Usage:
   o4 seed-from <dir> [--fstat <fstat>] [--move]
   o4 (drop|keep|keep-any) [-v] [--case|--not-case] [--open|--not-open] [--existence|--not-existence] [--checksum|--not-checksum] [--deletes|--not-deletes]
   o4 drop --havelist
-  o4 [-q] pyforce [--debug] [--no-rev] [--] <p4args>...
+  o4 [-q] pyforce [--writable] [--debug] [--no-rev] [--] <p4args>...
   o4 head <paths>...
+  o4 git-hybrid
   o4 progress
   o4 fail
 
@@ -54,11 +55,14 @@ Option:
   -f            Force all files to be verified and synced.
   +o            Do not sync open files.
   pyforce       Use pyforce to execute the p4 command (<p4args>...) on fstat on stdin.
+  --writable    Make files writable after sync and switch to read only before sync. Implies that
+                no .bak files are made of writable files.
   --no-rev      Send the depot path to p4 without the revision number.
   --debug       Display the pyforce response objects on stderr.
   <p4args>      List of arguments for the p4 CLI.
   head          Update .o4/head files in listed paths.
   <paths>       List of paths to visit.
+  git-hybrid    Enables git hybrid sync if it is not, otherwise success.
   progress      Show progress based on .o4/.fstat.
   fail          Fails if there were fstat on stdin.
   -v            Be verbose.
@@ -81,8 +85,6 @@ from signal import SIGINT
 from errno import EPERM
 import shutil
 
-err_print = functools.partial(print, file=sys.stderr)
-
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from o4_pyforce import Pyforce, P4Error, P4TimeoutError, info as pyforce_info, \
@@ -91,7 +93,9 @@ from o4_fstat import fstat_from_csv, fstat_iter, fstat_path, \
     fstat_split, fstat_join, get_fstat_cache, F_REVISION, F_FILE_SIZE, F_CHECKSUM, F_PATH
 from o4_progress import progress_iter, progress_show, progress_enabled
 from o4_utils import chdir, consume, o4_log, caseful_accurate
+from o4_git import is_git_hybrid, git_master_prep, git_o4_import, git_master_restore, git_hybrid_init
 
+err_print = functools.partial(print, file=sys.stderr)
 CLR = '%c[2K\r' % chr(27)
 
 SYNCED_CL_FILE = '.o4/changelist'
@@ -238,13 +242,12 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
     """
 
     if os.environ.get('DEBUG', ''):
-        print(f"""# o4 fstat {os.getcwd()}
+        err_print(f"""# o4 fstat {os.getcwd()}
 # changelist: {changelist}
 # previous_cl: {previous_cl}
 # drop: {drop}
 # keep: {keep}
-# quiet: {quiet}""",
-              file=sys.stderr)
+# quiet: {quiet}""")
     o4_log('fstat',
            _depot_path(),
            changelist=changelist,
@@ -392,7 +395,6 @@ def o4_drop_have(verbose=False):
 
 
 def o4_filter(filtertype, filters, verbose):
-    from functools import partial
 
     # Each function implements a filter. It is called with an Fstat tuple.
     # If it "likes" the row (e.g., "checksum" likes the row if the checksum
@@ -446,22 +448,22 @@ def o4_filter(filtertype, filters, verbose):
         sys.exit(f'*** ERROR: No arguments supplied to filter')
     elif len(funcs) == 1 and filtertype != 'drop' and not funcs[0].startswith('not('):
         if verbose:
-            print(f"# Filter {filtertype}:", funcs, file=sys.stderr)
+            err_print(f"# Filter {filtertype}:", funcs)
         combo_func = locals()[funcs[0].split('(')[0]]
     elif filtertype == 'drop':
         combo_func = 'lambda x: not(' + ' or '.join(f for f in funcs) + ')'
         if verbose:
-            print(f"# Filter {filtertype}:", combo_func, file=sys.stderr)
+            err_print(f"# Filter {filtertype}:", combo_func)
         combo_func = eval(combo_func, locals())
     elif filtertype == 'keep-any':
         combo_func = 'lambda x: ' + ' or '.join(f for f in funcs)
         if verbose:
-            print(f"# Filter {filtertype}:", combo_func, file=sys.stderr)
+            err_print(f"# Filter {filtertype}:", combo_func)
         combo_func = eval(combo_func, locals())
     elif filtertype == 'keep':
         combo_func = 'lambda x: ' + ' and '.join(f for f in funcs)
         if verbose:
-            print(f"# Filter {filtertype}:", combo_func, file=sys.stderr)
+            err_print(f"# Filter {filtertype}:", combo_func)
         combo_func = eval(combo_func, locals())
     else:
         sys.exit(f"*** ERROR: Invalid filtertype: {filtertype}")
@@ -481,7 +483,7 @@ def o4_filter(filtertype, filters, verbose):
         raise
 
 
-def o4_pyforce(debug, no_revision, args: list, quiet=False):
+def o4_pyforce(debug, no_revision, writable, args: list, quiet=False):
     """
     Encapsulates Pyforce, does book keeping to ensure that all files
     that should be operated on are in fact dealt with by p4. Handles
@@ -491,14 +493,19 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
 
     from tempfile import NamedTemporaryFile
     from collections import defaultdict
+    from stat import S_IWUSR, S_IFREG
 
     class LogAndAbort(Exception):
         'Dumps debug information on errors.'
 
-    o4_log('pyforce', no_revision=no_revision, quiet=quiet, *args)
+    a_plus_w = 0o222
+    a_minus_w = (0o777 ^ a_plus_w) | S_IFREG
+
+    o4_log('pyforce', no_revision=no_revision, writable=writable, quiet=quiet, *args)
 
     tmpf = NamedTemporaryFile(dir='.o4')
     fstats = []
+    orig_mode = {}
     for line in sys.stdin.read().splitlines():
         if line.startswith('#o4pass'):
             print(line)
@@ -506,10 +513,16 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
         f = fstat_split(line)
         if f and caseful_accurate(f[F_PATH]):
             fstats.append(f)
+            try:
+                s = os.stat(f[F_PATH])
+                if s.st_mode & S_IWUSR:
+                    orig_mode[f[F_PATH]] = s.st_mode
+                    os.chmod(f[F_PATH], s.st_mode & a_minus_w)
+            except FileNotFoundError:
+                orig_mode[f[F_PATH]] = None
         elif f:
-            print(f"*** WARNING: Pyforce is skipping {f[F_PATH]} because it is casefully",
-                  "mismatching a local file.",
-                  file=sys.stderr)
+            err_print(f"*** WARNING: Pyforce is skipping {f[F_PATH]} because it is casefully"
+                      " mismatching a local file.")
     retries = 3
     head = _depot_path().replace('/...', '')
     while fstats:
@@ -567,6 +580,14 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
                     errs.append(res)
                     continue
                 res_str = Pyforce.unescape(res_str)
+                try:
+                    mode = orig_mode.pop(res_str)
+                    if not mode:
+                        mode = os.stat(res_str).st_mode & a_minus_w
+                    os.chmod(res_str, mode)
+                except (KeyError, FileNotFoundError):
+                    pass
+
                 for i, f in enumerate(fstats):
                     if f"{head}/{f[F_PATH]}" in res_str:
                         repeats[f"{head}/{f[F_PATH]}"].append(res)
@@ -592,10 +613,10 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
             for a in e.args:
                 if 'clobber writable file' in a['data']:
                     fname = a['data'].split('clobber writable file')[1].strip()
-                    print("*** WARNING: Saving writable file as .bak:", fname, file=sys.stderr)
+                    err_print("*** WARNING: Saving writable file as .bak:", fname)
                     if os.path.exists(fname + '.bak'):
                         now = time.time()
-                        print(f"*** WARNING: Moved previous .bak to {fname}.{now}", file=sys.stderr)
+                        err_print(f"*** WARNING: Moved previous .bak to {fname}.{now}")
                         os.rename(fname + '.bak', f'{fname}.bak.{now}')
                     shutil.copy(fname, fname + '.bak')
                     os.chmod(fname, 0o400)
@@ -605,7 +626,7 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
                 raise
         except P4TimeoutError as e:
             e = str(e).replace('\n', ' ')
-            print(f"# P4 TIMEOUT, RETRIES {retries}: {e}", file=sys.stderr)
+            err_print(f"# P4 TIMEOUT, RETRIES {retries}: {e}")
             retries -= 1
             if not retries:
                 sys.exit(f"{CLR}*** ERROR: Perforce timed out too many times:\n{e}")
@@ -628,6 +649,14 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
                     # its objects before operation, as in "And for my next act... !"
                     # This premature printing leads to false checksum errors during sync.
                     print(fstat_join(fstat))
+    # TODO: This should probably be in a finally clause
+    for fname, omode in orig_mode.items():
+        try:
+            if not omode:
+                omode = os.stat(res_str).st_mode & a_minus_w
+            os.chmod(fname, omode)
+        except FileNotFoundError:
+            pass
 
 
 def o4_sync(changelist,
@@ -776,13 +805,12 @@ def o4_sync(changelist,
     o4bin = find_o4bin()
 
     previous_cl = 0
-    if os.path.exists('.o4/changelist'):
-        with open('.o4/changelist') as fin:
+    if os.path.exists(SYNCED_CL_FILE):
+        with open(SYNCED_CL_FILE) as fin:
             try:
                 previous_cl = int(fin.read().strip())
             except ValueError:
-                print("{CLR}*** WARNING: {os.getcwd()}/.o4/changelist could not be read",
-                      file=sys.stderr)
+                err_print(f"{CLR}*** WARNING: {os.getcwd()}/{SYNCED_CL_FILE} could not be read")
 
     o4_log('sync',
            changelist=changelist,
@@ -855,6 +883,12 @@ def o4_sync(changelist,
     else:
         print(f"{CLR}*** INFO: There are no opened files.")
 
+    prep = None
+    if is_git_hybrid():
+        # TODO: Is this disabled by --move or -s or -f?
+        prep = git_master_prep(_depot_path(), changelist)
+        pyforce = f"{pyforce} --writable --"  # Make sure this is not affixed for opened files
+
     quiet = '-q' if seed else ''
     retry = (f"| {manifold_big} {o4bin} drop --checksum"
              f"| {gatling_verbose} {o4bin} {quiet} {pyforce} sync -f"
@@ -916,6 +950,11 @@ def o4_sync(changelist,
     if previous_cl == actual_cl and not force:
         print(f'*** INFO: {os.getcwd()} is already synced to {actual_cl}, use -f to force a'
               f' full verification.')
+
+    if prep:
+        err_print("*** INFO: Sync from p4 is complete. Hybrid import upstream changes to git.")
+        git_o4_import(prep)
+        git_master_restore(prep)
 
 
 def get_clean_cl(opts):
@@ -1007,7 +1046,7 @@ def o4_fail():
     err_print()
     hdr = ' o4 ERROR ' if files else ' o4 WARNING '
     l = (78 - len(hdr)) // 2
-    hdr = '*' * l + hdr + '*' * l
+    hdr = '*'*l + hdr + '*'*l
     ftr = '*' * len(hdr)
     err_print(f'{CLR}{hdr}')
 
@@ -1053,7 +1092,7 @@ def o4_head(paths):
                         print(f"{s['change']}", file=fout)
                     break
             else:
-                print("*** WARNING: Could not map result", s, file=sys.stderr)
+                err_print("*** WARNING: Could not map result", s)
         for r in res:
             if type(r) is not int:
                 try:
@@ -1072,9 +1111,7 @@ def o4_head(paths):
     for retry in range(3):
         try:
             end = '' if len(args) > 1 else args[0]
-            print(f"# {CLR}*** INFO: ({retry+1}/3) Retrieving HEAD changelist for",
-                  end,
-                  file=sys.stderr)
+            err_print(f"# {CLR}*** INFO: ({retry+1}/3) Retrieving HEAD changelist for", end)
             if not end:
                 for path in args:
                     print(f"      {path}")
@@ -1161,7 +1198,11 @@ def main():
                 ), opts['-v'])
         if opts['pyforce']:
             ran = True
-            o4_pyforce(opts['--debug'], opts['--no-rev'], opts['<p4args>'], opts['-q'])
+            o4_pyforce(opts['--debug'], opts['--no-rev'], opts['--writable'], opts['<p4args>'],
+                       opts['-q'])
+        if opts['git-hybrid']:
+            ran = True
+            git_hybrid_init()
         if opts['progress']:
             ran = True
             progress_show(os.path.join(os.getcwd(), '.o4/.fstat'))
@@ -1169,12 +1210,12 @@ def main():
             ran = True
             o4_fail()
     except KeyboardInterrupt:
-        print('*** WARNING: aborted by user', file=sys.stderr)
+        err_print('*** WARNING: aborted by user')
         ec = 0 - SIGINT
     except Exception as e:
         from traceback import print_exc
         print_exc(file=sys.stderr)
-        print(f'*** ERROR: {e}', file=sys.stderr)
+        err_print(f'*** ERROR: {e}')
         ec = 1
 
     if ran or ec:
@@ -1244,7 +1285,7 @@ def main():
                     opts['-v'])
     except KeyboardInterrupt:
         prog = 'sync' if opts['sync'] else 'fstat'
-        print(f'*** WARNING: {prog} aborted by user', file=sys.stderr)
+        err_print(f'*** WARNING: {prog} aborted by user')
         ec = 0 - SIGINT
     except BrokenPipeError:
         print('*** ERROR: broken pipe :(', file=sys.stderr)

@@ -334,8 +334,8 @@ def fstat_iter(depot_path, to_changelist, from_changelist=0, cache_dir='.o4'):
                 print(f'*** INFO: Fstat server redirected to changelist {e.cl}', file=sys.stderr)
                 if e.cl > to_changelist:
                     print(f'*** WARNING: Fstat server redirected to {e.cl} which is greater',
-                          f'than {to_changelist}.')
-                    print('             Please contact workspaceengineering@salesforce.com.')
+                          f'than {to_changelist}.', file=sys.stderr)
+                    print('             Please contact workspaceengineering@salesforce.com.', file=sys.stderr)
                 elif e.cl > cache_cl:
                     missing_range = (to_changelist, e.cl + 1)
                     o4server_range = (e.cl, cache_cl + 1)
@@ -385,7 +385,7 @@ def fstat_iter(depot_path, to_changelist, from_changelist=0, cache_dir='.o4'):
                         break
                 except P4TimeoutError:
                     perforce_filenames.clear()
-                    print(f"{CLR}*** WARNING: ({retry+1}/3) P4 Timeout while getting fstat")
+                    print(f"{CLR}*** WARNING: ({retry+1}/3) P4 Timeout while getting fstat", file=sys.stderr)
             else:
                 sys.exit(f"{CLR}*** ERROR: "
                          f"Too many P4 Timeouts for p4 fstat"

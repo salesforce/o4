@@ -2,3 +2,4 @@
 build
 venv
 .*.lint
+__pycache__

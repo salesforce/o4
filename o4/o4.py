@@ -887,9 +887,11 @@ def o4_sync(changelist,
             print("*** INFO: Flushing took {:.2f} minutes".format((time.time() - t0) / 60))
 
     cmd = (f"{fstat} "
-           f"| {o4bin} drop --deletes --checksum"
+           f"| {o4bin} drop --deletes"
            f"{keep_case}"
            f"{progress}"
+           f"| {manifold_big} {o4bin} drop --checksum"
+           f"{syncit}"
            f"{retry}")
     run_cmd(cmd)
 

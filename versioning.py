@@ -12,7 +12,7 @@ Options:
 TEMPLATE = """
 # This file is generated, do not modify
 
-import datetime.datetime
+import datetime
 
 VERSION = ({major}, {minor}, {step})
 VERSION_STR = '{major}.{minor}.{step}'

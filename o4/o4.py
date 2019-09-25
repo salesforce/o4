@@ -11,6 +11,7 @@ Usage:
   o4 head <paths>...
   o4 progress
   o4 fail
+  o4 version [--older <compare>]
 
 Option:
   sync          Sync/verify <path>.
@@ -61,6 +62,9 @@ Option:
   <paths>       List of paths to visit.
   progress      Show progress based on .o4/.fstat.
   fail          Fails if there were fstat on stdin.
+  version       Display version information.
+  --older <compare>    Exits with error status if this version is older than cmp_version,
+                supplied as maj.min.patch
   -v            Be verbose.
   -m <ignored>  Compatibility with old o4, just added to not break, not actually implementing
                 anything and will be removed as soon as old o4 is gone.
@@ -1134,6 +1138,16 @@ def main():
         # marker so they are not parsed
         args.insert(args.index('pyforce') + 1, '--')
     opts = docopt(__doc__, args)
+
+    if opts['version']:
+        from version import VERSION, VERSION_STR, TIMESTAMP, USER_EMAIL, USER_NAME
+        if not opts['--older']:
+            print(VERSION_STR)
+            print(TIMESTAMP.strftime('%Y-%m-%d'), USER_EMAIL, USER_NAME)
+            sys.exit(0)
+        testver = opts['--older'].split('.')
+        testver = tuple([int(d) for d in (testver + [0, 0, 0])[:3]])
+        sys.exit(VERSION >= testver)
 
     # Commands that don't parse a changelist
     ec = 0

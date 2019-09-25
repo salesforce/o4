@@ -11,7 +11,7 @@ Usage:
   o4 head <paths>...
   o4 progress
   o4 fail
-  o4 version [--older <compare>]
+  o4 version [--at-least <compare>]
 
 Option:
   sync          Sync/verify <path>.
@@ -63,8 +63,8 @@ Option:
   progress      Show progress based on .o4/.fstat.
   fail          Fails if there were fstat on stdin.
   version       Display version information.
-  --older <compare>    Exits with error status if this version is older than cmp_version,
-                supplied as maj.min.patch
+  --at-least <compare>    Exits with error status if this version is older than <compare>,
+                supplied as maj.min.patch (i.e., it implies an update is called for).
   -v            Be verbose.
   -m <ignored>  Compatibility with old o4, just added to not break, not actually implementing
                 anything and will be removed as soon as old o4 is gone.
@@ -1141,13 +1141,13 @@ def main():
 
     if opts['version']:
         from version import VERSION, VERSION_STR, TIMESTAMP, USER_EMAIL, USER_NAME
-        if not opts['--older']:
+        if not opts['--at-least']:
             print(VERSION_STR)
             print(TIMESTAMP.strftime('%Y-%m-%d'), USER_EMAIL, USER_NAME)
             sys.exit(0)
-        testver = opts['--older'].split('.')
+        testver = opts['--at-least'].split('.')
         testver = tuple([int(d) for d in (testver + [0, 0, 0])[:3]])
-        sys.exit(VERSION >= testver)
+        sys.exit(VERSION < testver)
 
     # Commands that don't parse a changelist
     ec = 0

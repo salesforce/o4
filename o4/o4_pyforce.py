@@ -9,6 +9,13 @@ import time
 import pickle
 
 
+class P4Writeable(Exception):
+    '''
+    Indicates that there are writable files that p4 won't overwrite.
+    The exception parameter is a list of fstat files describing them.
+    '''
+
+
 class P4Error(Exception):
     '''Raised when there is an error in the p4 result'''
 
@@ -34,11 +41,11 @@ class Pyforce(object):
             timeout = abs(int(os.environ['O4_P4_TIMEOUT']))
         except:
             timeout = 120
-        self.pope = Popen(['p4', f'-vnet.maxwait={timeout}', '-G'] + self.args,
-                          stdout=PIPE,
-                          stderr=self.stderr)
+        self.pope = Popen(
+            ['p4', f'-vnet.maxwait={timeout}', '-G'] + self.args, stdout=PIPE, stderr=self.stderr)
         self.transform = Pyforce.to_str
         self.errors = []
+        self.writeable = []  # The caller may want to treat non-clobberable files specifically.
 
     def __iter__(self):
         return self
@@ -54,7 +61,7 @@ class Pyforce(object):
         Certain errors are not really errors, it's just p4 being
         silly. Such as the error "No files to reconcile" when you
         reconcile files that have the correct content. Such errors are
-        converted to code=stat and passed on. Some may also produce a
+        converted to code=pass and passed on. Some may also produce a
         '#o4pass'-prefixed line out stdout, which, in a complete run,
         will make their way to "o4 fail" and be reported.
         """
@@ -62,43 +69,49 @@ class Pyforce(object):
         try:
             while True:
                 res = marshal.load(self.pope.stdout)
-                if res.get(b'code') == b'info' and res.get(b'data', ''):
-                    data = res.get(b'data')
+                data = res.get(b'data')
+                if res.get(b'code') == b'info' and data:
                     ## Why was this upped to error?
                     #  b"is opened and not being changed" in data or b"must resolve" in data) and
                     if data.startswith(b'Diff chunks') and not data.endswith(b'+ 0 conflicting'):
-                        print("*** WARNING: There are conflicts.", file=sys.stderr)
+                        # This implies a resolution, but there's no information.
+                        # A separate record (resolve skipped) identifies the
+                        # file if there are conflicts.
+                        pass
                     elif (b"can't move (already opened for edit)" in data or
                           b"is opened for add and can't be replaced" in data or
                           b"- resolve skipped" in data):
-                        res[b'code'] = b'stat'
+                        res[b'code'] = b'pass'
                         print(f'#o4pass-warn#{data.decode("utf-8",errors="ignore")}')
                 if res.get(b'code') != b'error':
                     return self.transform(res)
-                if b'data' in res:
-                    if (b'file(s) up-to-date' in res[b'data'] or
-                            b'no file(s) to reconcile' in res[b'data'] or
-                            b'no file(s) to resolve' in res[b'data'] or
-                            b'no file(s) to unshelve' in res[b'data'] or
-                            b'file(s) not on client' in res[b'data'] or
-                            b'No shelved files in changelist to delete' in res[b'data']):
-                        res[b'code'] = b'stat'
-                    elif (b'no file(s) at that changelist number' in res[b'data'] or
-                          b'no revision(s) above those at that changelist number' in res[b'data']):
+                if data:
+                    # For messages that aren't errors at all, change their code and return
+                    if (b'file(s) up-to-date' in data or b'no file(s) to reconcile' in data or
+                            b'no file(s) to resolve' in data or b'no file(s) to unshelve' in data or
+                            b'file(s) not on client' in data or
+                            b'No shelved files in changelist to delete' in data):
+                        res[b'code'] = b'pass'
+                    elif (b'no file(s) at that changelist number' in data or
+                          b'no revision(s) above those at that changelist number' in data):
                         # print('*** INFO: Skipping premature sync: ', res)
                         res[b'code'] = b'skip'
-                    elif b'clobber writable file' in res[b'data']:
-                        res[b'code'] = b'error'
+
+                    # Other specific errors we pass along
+                    elif b'clobber writable file' in data:
+                        self.writeable.append(Pyforce.to_str(res))
+                        res[b'code'] = b'pass'
+
                     # {b'code': b'error', b'data': b'SSL receive failed.\nread: Connection timed out: Connection timed out\n', b'severity': 3, b'generic': 38}
                     # 'data': 'TCP receive exceeded maximum configured duration of 60 seconds.\n', 'severity': 3, 'generic': 38
                     # This seems like it could be 100 different messages; we probably need #TODO find out what generic means.
-                    elif b'Connection timed out' in res[b'data'] or b'TCP receive exceeded' in res[
-                            b'data']:
+                    elif b'Connection timed out' in data or b'TCP receive exceeded' in data:
                         raise P4TimeoutError(res, self.args)
                     if res[b'code'] != b'error':
                         return self.transform(res)
                 # Allow operation to complete and report errors after
-                self.errors.append(Pyforce.to_str(res))
+                data = data or bytes(str(res), 'utf-8')
+                print(f'#o4pass-err#{data.decode("utf-8",errors="ignore")}')
         except EOFError:
             pass
         if self.stderr.tell():
@@ -106,14 +119,9 @@ class Pyforce(object):
             err = self.stderr.read().decode(sys.stdout.encoding)
             if 'timed out' in err:
                 raise P4TimeoutError(err)
-            self.errors.append({
-                'code': 'error',
-                'data': f'stderr: {err}',
-                'severity': 3,
-                'generic': 38
-            })
-        if self.errors:
-            raise P4Error(*self.errors)
+            print(f'#o4pass-err#{err})')
+        if self.writeable:
+            raise P4Writeable(self.writeable)
         raise StopIteration()
 
     def __del__(self):

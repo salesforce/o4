@@ -89,7 +89,7 @@ err_print = functools.partial(print, file=sys.stderr)
 
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
-from o4_pyforce import Pyforce, P4Error, P4TimeoutError, info as pyforce_info, \
+from o4_pyforce import Pyforce, P4Error, P4TimeoutError, P4Writeable, info as pyforce_info, \
     client as pyforce_client, clear_cache
 from o4_fstat import fstat_from_csv, fstat_iter, fstat_path, \
     fstat_split, fstat_join, get_fstat_cache, F_REVISION, F_FILE_SIZE, F_CHECKSUM, F_PATH
@@ -242,21 +242,23 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
     """
 
     if os.environ.get('DEBUG', ''):
-        print(f"""# o4 fstat {os.getcwd()}
+        print(
+            f"""# o4 fstat {os.getcwd()}
 # changelist: {changelist}
 # previous_cl: {previous_cl}
 # drop: {drop}
 # keep: {keep}
 # quiet: {quiet}""",
-              file=sys.stderr)
-    o4_log('fstat',
-           _depot_path(),
-           changelist=changelist,
-           previous_cl=previous_cl,
-           drop=drop,
-           keep=keep,
-           quiet=quiet,
-           force=force)
+            file=sys.stderr)
+    o4_log(
+        'fstat',
+        _depot_path(),
+        changelist=changelist,
+        previous_cl=previous_cl,
+        drop=drop,
+        keep=keep,
+        quiet=quiet,
+        force=force)
 
     if previous_cl:
         previous_cl = int(previous_cl)
@@ -286,16 +288,18 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
         # be synced to their state at the lower changelist.
         past_filenames = set(p for p, _ in map(
             fstat_path,
-            progress_iter(fstat_iter(_depot_path(), changelist),
-                          os.getcwd() + '/.o4/.fstat', 'fstat-reverse')) if p)
+            progress_iter(
+                fstat_iter(_depot_path(), changelist),
+                os.getcwd() + '/.o4/.fstat', 'fstat-reverse')) if p)
         if not keep:
             keep = set()
         if not drop:
             drop = set()
         for f in map(
                 fstat_split,
-                progress_iter(fstat_iter(_depot_path(), previous_cl, changelist),
-                              os.getcwd() + '/.o4/.fstat', 'fstat-reverse')):
+                progress_iter(
+                    fstat_iter(_depot_path(), previous_cl, changelist),
+                    os.getcwd() + '/.o4/.fstat', 'fstat-reverse')):
             if not f:
                 continue
             if f[F_PATH] not in past_filenames:
@@ -320,8 +324,9 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
     if not keep:
         keep = None
 
-    fstats = progress_iter(fstat_iter(_depot_path(), changelist, previous_cl),
-                           os.getcwd() + '/.o4/.fstat', 'fstat')
+    fstats = progress_iter(
+        fstat_iter(_depot_path(), changelist, previous_cl),
+        os.getcwd() + '/.o4/.fstat', 'fstat')
     # Can't break out of fstat_iter without risking that the local
     # cache is not created, causing fstat_from_perforce to be called
     # twice, so we use an iterator that we can drain.
@@ -511,9 +516,10 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
         if f and caseful_accurate(f[F_PATH]):
             fstats.append(f)
         elif f:
-            print(f"*** WARNING: Pyforce is skipping {f[F_PATH]} because it is casefully",
-                  "mismatching a local file.",
-                  file=sys.stderr)
+            print(
+                f"*** WARNING: Pyforce is skipping {f[F_PATH]} because it is casefully",
+                "mismatching a local file.",
+                file=sys.stderr)
     retries = 3
     head = _depot_path().replace('/...', '')
     while fstats:
@@ -523,10 +529,12 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
             p4paths = [f"{Pyforce.escape(f[F_PATH])}#{f[F_REVISION]}" for f in fstats]
         tmpf.seek(0)
         tmpf.truncate()
-        not_yet = []
         pargs = []
         xargs = []
-        # This is a really bad idea, files are output to stdout before the actual
+        queued_prints = []  # Print the fstats after the p4 process has ended, because p4 marshals
+        # its objects before operation, as in "And for my next act... !"
+        # This premature printing leads to false checksum errors during sync.
+        # This is a really bad idea, p4 prints filenames before the actual
         # sync happens, causing checksum tests to start too early:
         #        if len(p4paths) > 30 and 'sync' in args:
         #            xargs.append('--parallel=threads=5')
@@ -549,6 +557,8 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
             for res in Pyforce(*pargs, *args, *xargs):
                 if debug:
                     err_print("*** DEBUG: Received", repr(res))
+                if res.get('code', '') in ('pass', 'skip'):
+                    continue
                 # FIXME: Delete this if-statement:
                 if res.get('code', '') == 'info':
                     infos.append(res)
@@ -574,7 +584,7 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
                 for i, f in enumerate(fstats):
                     if f"{head}/{f[F_PATH]}" in res_str:
                         repeats[f"{head}/{f[F_PATH]}"].append(res)
-                        not_yet.append(fstats.pop(i))
+                        queued_prints.append(fstats.pop(i))
                         break
                 else:
                     for f in repeats.keys():
@@ -591,22 +601,16 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
 
             if len(p4paths) == len(fstats):
                 raise LogAndAbort('Nothing recognized from p4')
-        except P4Error as e:
-            non_recoverable = False
+        except P4Writeable as e:
             for a in e.args:
-                if 'clobber writable file' in a['data']:
-                    fname = a['data'].split('clobber writable file')[1].strip()
-                    print("*** WARNING: Saving writable file as .bak:", fname, file=sys.stderr)
-                    if os.path.exists(fname + '.bak'):
-                        now = time.time()
-                        print(f"*** WARNING: Moved previous .bak to {fname}.{now}", file=sys.stderr)
-                        os.rename(fname + '.bak', f'{fname}.bak.{now}')
-                    shutil.copy(fname, fname + '.bak')
-                    os.chmod(fname, 0o400)
-                else:
-                    non_recoverable = True
-            if non_recoverable:
-                raise
+                fname = a['data'].split('clobber writable file')[1].strip()
+                print("*** WARNING: Saving writable file as .bak:", fname, file=sys.stderr)
+                if os.path.exists(fname + '.bak'):
+                    now = time.time()
+                    print(f"*** WARNING: Moved previous .bak to {fname}.{now}", file=sys.stderr)
+                    os.rename(fname + '.bak', f'{fname}.bak.{now}')
+                shutil.copy(fname, fname + '.bak')
+                os.chmod(fname, 0o400)
         except P4TimeoutError as e:
             e = str(e).replace('\n', ' ')
             print(f"# P4 TIMEOUT, RETRIES {retries}: {e}", file=sys.stderr)
@@ -627,10 +631,7 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
             sys.exit(f'{CLR}*** ERROR: {e}; detail in {fname}')
         finally:
             if not quiet:
-                for fstat in not_yet:
-                    # Printing the fstats after the p4 process has ended, because p4 marshals
-                    # its objects before operation, as in "And for my next act... !"
-                    # This premature printing leads to false checksum errors during sync.
+                for fstat in queued_prints:
                     print(fstat_join(fstat))
 
 
@@ -785,20 +786,22 @@ def o4_sync(changelist,
             try:
                 previous_cl = int(fin.read().strip())
             except ValueError:
-                print("{CLR}*** WARNING: {os.getcwd()}/.o4/changelist could not be read",
-                      file=sys.stderr)
+                print(
+                    "{CLR}*** WARNING: {os.getcwd()}/.o4/changelist could not be read",
+                    file=sys.stderr)
 
-    o4_log('sync',
-           changelist=changelist,
-           previous_cl=previous_cl,
-           seed=seed,
-           seed_move=seed_move,
-           quick=quick,
-           force=force,
-           skip_opened=skip_opened,
-           verbose=verbose,
-           gatling=gatling,
-           manifold=manifold)
+    o4_log(
+        'sync',
+        changelist=changelist,
+        previous_cl=previous_cl,
+        seed=seed,
+        seed_move=seed_move,
+        quick=quick,
+        force=force,
+        skip_opened=skip_opened,
+        verbose=verbose,
+        gatling=gatling,
+        manifold=manifold)
 
     verbose = ' -v' if verbose else ''
     force = ' -f' if force else ''
@@ -992,13 +995,16 @@ def o4_clean(changelist, quick=False, resume=False, discard=False):
 
 def o4_fail():
     files = []
-    passthroughs = []
+    warnings = []
+    errors = []
     n = 0
     for line in sys.stdin:
         if line.startswith('#o4pass-'):
             msgtype, _, msg = line.replace('#o4pass-', '').partition('#')
             if msgtype == 'warn':
-                passthroughs.append(msg)
+                warnings.append(msg)
+            elif msgtype == 'err':
+                errors.append(msg)
             continue
         f = fstat_split(line)
         if not f:
@@ -1007,28 +1013,32 @@ def o4_fail():
         if n < 100:
             files.append(f"  {f[F_PATH]}#{f[F_REVISION]}")
 
-    if not files and not passthroughs:
+    if not files and not warnings and not errors:
         sys.exit(0)
 
     err_print()
-    hdr = ' o4 ERROR ' if files else ' o4 WARNING '
+    hdr = ' o4 ERROR ' if files or errors else ' o4 WARNING '
     l = (78 - len(hdr)) // 2
     hdr = '*' * l + hdr + '*' * l
     ftr = '*' * len(hdr)
     err_print(f'{CLR}{hdr}')
 
     if files:
-        err_print('These files did not sync and are ERRORs')
+        err_print('These files did not sync')
         err_print('\n'.join(sorted(files)))
         if len(files) != n:
             err_print(f'  ...and {n-len(files)} others!')
         err_print(f'\n{ftr}')
 
-    if passthroughs:
+    if errors:
+        err_print('These files caused errors')
+        err_print('\n'.join(sorted(errors)))
+
+    if warnings:
         err_print('These files did not sync and are WARNINGs')
-        err_print('\n'.join(sorted(passthroughs)))
+        err_print('\n'.join(sorted(warnings)))
         err_print(ftr)
-        if not files:
+        if not files and not errors:
             with open(INCOMPLETE_INDICATOR, 'w') as f:
                 pass
             err_print(
@@ -1036,8 +1046,8 @@ def o4_fail():
             err_print(ftr)
             sys.exit(0)
 
-    err_print('BECAUSE o4 DID NOT COMPLETE, THERE MAY BE OTHER FILES')
-    err_print('BESIDES THOSE LISTED THAT ARE NOT CORRECTLY SYNCED.')
+    #err_print('BECAUSE o4 DID NOT COMPLETE, THERE MAY BE OTHER FILES')
+    #err_print('BESIDES THOSE LISTED THAT ARE NOT CORRECTLY SYNCED.')
     s = '' if n == 1 else 's'
     sys.exit(f'{CLR}*** ERROR: Pipeline ended with {n} file{s} rejected.')
 
@@ -1078,9 +1088,10 @@ def o4_head(paths):
     for retry in range(3):
         try:
             end = '' if len(args) > 1 else args[0]
-            print(f"# {CLR}*** INFO: ({retry+1}/3) Retrieving HEAD changelist for",
-                  end,
-                  file=sys.stderr)
+            print(
+                f"# {CLR}*** INFO: ({retry+1}/3) Retrieving HEAD changelist for",
+                end,
+                file=sys.stderr)
             if not end:
                 for path in args:
                     print(f"      {path}")

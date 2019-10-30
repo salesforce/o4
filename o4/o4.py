@@ -108,6 +108,9 @@ INCOMPLETE_INDICATOR = '.o4/sync-incomplete'
 def find_o4bin():
     # "Why not just use which?" "Sparse docker base images."
     import stat
+    import os.path
+    if os.path.dirname(sys.argv[0]):
+        return os.path.abspath(sys.argv[0])
     for d in os.environ['PATH'].split(':'):
         try:
             path = os.path.join(d, 'o4')
@@ -557,8 +560,6 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
             for res in Pyforce(*pargs, *args, *xargs):
                 if debug:
                     err_print("*** DEBUG: Received", repr(res))
-                if res.get('code', '') in ('pass', 'skip'):
-                    continue
                 # FIXME: Delete this if-statement:
                 if res.get('code', '') == 'info':
                     infos.append(res)

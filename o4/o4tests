@@ -1,0 +1,13 @@
+Descriptions of manual tests currently being done.
+
+Writable file:
+    rm -f .o4/changelist
+    p4 sync filename#1
+    chmod +w filename
+    echo new >>filename
+    o4 sync .
+    * INFO messages
+    * exit status 0
+    * .o4/changelist exists
+
+

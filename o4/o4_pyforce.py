@@ -9,13 +9,6 @@ import time
 import pickle
 
 
-class P4Writeable(Exception):
-    '''
-    Indicates that there are writable files that p4 won't overwrite.
-    The exception parameter is a list of fstat files describing them.
-    '''
-
-
 class P4Error(Exception):
     '''Raised when there is an error in the p4 result'''
 
@@ -45,7 +38,6 @@ class Pyforce(object):
             ['p4', f'-vnet.maxwait={timeout}', '-G'] + self.args, stdout=PIPE, stderr=self.stderr)
         self.transform = Pyforce.to_str
         self.errors = []
-        self.writeable = []  # The caller may want to treat non-clobberable files specifically.
 
     def __iter__(self):
         return self
@@ -99,8 +91,7 @@ class Pyforce(object):
 
                     # Other specific errors we pass along
                     elif b'clobber writable file' in data:
-                        self.writeable.append(Pyforce.to_str(res))
-                        res[b'code'] = b'pass'
+                        res[b'code'] = b'error'
 
                     # {b'code': b'error', b'data': b'SSL receive failed.\nread: Connection timed out: Connection timed out\n', b'severity': 3, b'generic': 38}
                     # 'data': 'TCP receive exceeded maximum configured duration of 60 seconds.\n', 'severity': 3, 'generic': 38
@@ -110,8 +101,7 @@ class Pyforce(object):
                     if res[b'code'] != b'error':
                         return self.transform(res)
                 # Allow operation to complete and report errors after
-                data = data or bytes(str(res), 'utf-8')
-                print(f'#o4pass-err#{data.decode("utf-8",errors="ignore")}')
+                self.errors.append(Pyforce.to_str(res))
         except EOFError:
             pass
         if self.stderr.tell():
@@ -120,8 +110,8 @@ class Pyforce(object):
             if 'timed out' in err:
                 raise P4TimeoutError(err)
             print(f'#o4pass-err#{err})')
-        if self.writeable:
-            raise P4Writeable(self.writeable)
+        if self.errors:
+            raise P4Error(*self.errors)
         raise StopIteration()
 
     def __del__(self):

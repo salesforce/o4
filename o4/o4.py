@@ -89,7 +89,7 @@ err_print = functools.partial(print, file=sys.stderr)
 
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
-from o4_pyforce import Pyforce, P4Error, P4TimeoutError, P4Writeable, info as pyforce_info, \
+from o4_pyforce import Pyforce, P4Error, P4TimeoutError, info as pyforce_info, \
     client as pyforce_client, clear_cache
 from o4_fstat import fstat_from_csv, fstat_iter, fstat_path, \
     fstat_split, fstat_join, get_fstat_cache, F_REVISION, F_FILE_SIZE, F_CHECKSUM, F_PATH
@@ -602,16 +602,23 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
 
             if len(p4paths) == len(fstats):
                 raise LogAndAbort('Nothing recognized from p4')
-        except P4Writeable as e:
+        except P4Error as e:
+            non_recoverable = False
             for a in e.args:
-                fname = a['data'].split('clobber writable file')[1].strip()
-                print("*** WARNING: Saving writable file as .bak:", fname, file=sys.stderr)
-                if os.path.exists(fname + '.bak'):
-                    now = time.time()
-                    print(f"*** WARNING: Moved previous .bak to {fname}.{now}", file=sys.stderr)
-                    os.rename(fname + '.bak', f'{fname}.bak.{now}')
-                shutil.copy(fname, fname + '.bak')
-                os.chmod(fname, 0o400)
+                if 'clobber writable file' in a['data']:
+                    fname = a['data'].split('clobber writable file')[1].strip()
+                    if os.path.exists(fname + '.bak'):
+                        now = time.time()
+                        print(f"#o4pass-info#Moved previous .bak to {fname}.bak.{now}")
+                        os.rename(fname + '.bak', f'{fname}.bak.{now}')
+                    print(f"#o4pass-info#Writable file {fname} copied to .bak")
+                    shutil.copy(fname, fname + '.bak')
+                    os.chmod(fname, 0o400)
+                else:
+                    print(f"#o4pass-err#{a['data']}")
+                    non_recoverable = True
+            if non_recoverable:
+                raise
         except P4TimeoutError as e:
             e = str(e).replace('\n', ' ')
             print(f"# P4 TIMEOUT, RETRIES {retries}: {e}", file=sys.stderr)
@@ -996,13 +1003,16 @@ def o4_clean(changelist, quick=False, resume=False, discard=False):
 
 def o4_fail():
     files = []
-    warnings = []
     errors = []
+    warnings = []
+    infos = []
     n = 0
     for line in sys.stdin:
         if line.startswith('#o4pass-'):
             msgtype, _, msg = line.replace('#o4pass-', '').partition('#')
-            if msgtype == 'warn':
+            if msgtype == 'info':
+                infos.append(msg)
+            elif msgtype == 'warn':
                 warnings.append(msg)
             elif msgtype == 'err':
                 errors.append(msg)
@@ -1014,43 +1024,40 @@ def o4_fail():
         if n < 100:
             files.append(f"  {f[F_PATH]}#{f[F_REVISION]}")
 
-    if not files and not warnings and not errors:
+    if not files and not infos and not warnings and not errors:
         sys.exit(0)
-
-    err_print()
-    hdr = ' o4 ERROR ' if files or errors else ' o4 WARNING '
-    l = (78 - len(hdr)) // 2
-    hdr = '*' * l + hdr + '*' * l
-    ftr = '*' * len(hdr)
-    err_print(f'{CLR}{hdr}')
 
     if files:
         err_print('These files did not sync')
         err_print('\n'.join(sorted(files)))
         if len(files) != n:
             err_print(f'  ...and {n-len(files)} others!')
-        err_print(f'\n{ftr}')
 
     if errors:
-        err_print('These files caused errors')
-        err_print('\n'.join(sorted(errors)))
+        err_print('*** ERROR:\n\t', end='')
+        err_print('\n\t'.join(sorted(errors)))
 
     if warnings:
-        err_print('These files did not sync and are WARNINGs')
-        err_print('\n'.join(sorted(warnings)))
-        err_print(ftr)
+        err_print('*** WARNING:\n\t', end='')
+        err_print('\n\t'.join(sorted(warnings)))
         if not files and not errors:
             with open(INCOMPLETE_INDICATOR, 'w') as f:
                 pass
-            err_print(
-                f'{CLR} o4 IS EXITING WITH SUCCESS EVEN THOUGH THOSE FILES ARE NOT UP-TO-DATE')
-            err_print(ftr)
-            sys.exit(0)
 
-    #err_print('BECAUSE o4 DID NOT COMPLETE, THERE MAY BE OTHER FILES')
-    #err_print('BESIDES THOSE LISTED THAT ARE NOT CORRECTLY SYNCED.')
-    s = '' if n == 1 else 's'
-    sys.exit(f'{CLR}*** ERROR: Pipeline ended with {n} file{s} rejected.')
+    if infos:
+        err_print('*** INFO:\n\t', end='')
+        err_print('\n\t'.join(sorted(infos)))
+
+    if warnings and not files and not errors:
+        with open(INCOMPLETE_INDICATOR, 'w') as f:
+            pass
+        err_print(f'{CLR} o4 IS EXITING WITH SUCCESS EVEN THOUGH SOME FILES MAY NOT BE UP-TO-DATE')
+
+    if files or errors:
+        if n:
+            s = '' if n == 1 else 's'
+            err_print(f'{CLR}*** ERROR: Pipeline ended with {n} file{s} rejected.')
+        sys.exit(1)
 
 
 def o4_head(paths):

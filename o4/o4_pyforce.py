@@ -87,7 +87,7 @@ class Pyforce(object):
                     elif (b'no file(s) at that changelist number' in data or
                           b'no revision(s) above those at that changelist number' in data):
                         # print('*** INFO: Skipping premature sync: ', res)
-                        res[b'code'] = b'skip'
+                        res[b'code'] = b'pass'
 
                     # Other specific errors we pass along
                     elif b'clobber writable file' in data:

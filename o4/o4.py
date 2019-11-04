@@ -134,6 +134,26 @@ def _depot_path():
     return os.environ['DEPOT_PATH']
 
 
+def _client_path():
+    """
+    Returns the path that will be the prefix of any clientspec path.
+    I.e., a client path from Perforce will be that prefix plus the relative
+    path to the file.
+    Result is cached in env var $CLIENT_PATH.
+    """
+    if 'CLIENT_PATH' not in os.environ:
+        os.environ['CLIENT_PATH'] = os.path.dirname(
+            Pyforce.unescape(list(Pyforce('where', 'dummy'))[0]['clientFile']))
+    return os.environ['CLIENT_PATH']
+
+
+def client_path_to_depot_path(path):
+    if path.startswith(_client_path()):
+        dp = _depot_path().replace('/...', '')
+        return path.replace(_client_path(), dp)
+    return None
+
+
 def o4_seed_from(seed_dir, seed_fstat, op):
     """
     For each target fstat on stdin, copy the matching file from the
@@ -525,6 +545,7 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
                 file=sys.stderr)
     retries = 3
     head = _depot_path().replace('/...', '')
+    client_head = _client_path().replace('/...', '')
     while fstats:
         if no_revision:
             p4paths = [Pyforce.escape(f[F_PATH]) for f in fstats]
@@ -577,7 +598,8 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
                     continue
                 res_str = res.get('depotFile') or res.get('fromFile')
                 if not res_str and res.get('data'):
-                    res_str = head + '/' + res['data']
+                    res_str = client_path_to_depot_path(res['data']) or f'{head}/{res["data"]}'
+
                 if not res_str:
                     errs.append(res)
                     continue
@@ -585,7 +607,9 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
                 for i, f in enumerate(fstats):
                     if f"{head}/{f[F_PATH]}" in res_str:
                         repeats[f"{head}/{f[F_PATH]}"].append(res)
-                        queued_prints.append(fstats.pop(i))
+                        found = fstats.pop(i)
+                        if res['code'] != 'pass':
+                            queued_prints.append(found)
                         break
                 else:
                     for f in repeats.keys():

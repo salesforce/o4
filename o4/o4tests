@@ -11,3 +11,30 @@ Writable file:
     * .o4/changelist exists
 
 
+Resolve conflict
+  client 1
+     p4 edit f1
+     modify line 1
+  client 2
+     p4 edit f1
+     modify line 1 differently
+     p4 submit
+  client 1
+     edit f2 # not opened
+     # have to sync here in order to get "resolve skipped" on the next sync
+     o4 sync .
+
+  * f2 has the correct content
+
+
+
+
+
+
+
+Questions
+-----------
+If there is an error in the first o4 pipeline, the parent exits, so
+can still leave files unsynced that would have been synced by a later
+pipeline. Would it be okay to continue on and exit with error if any
+of the pipelines did?

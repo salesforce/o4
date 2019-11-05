@@ -154,6 +154,17 @@ def client_path_to_depot_path(path):
     return None
 
 
+def p4_operation(path, revision):
+    """
+    Returns the operation that was done for the path/revision recorded
+    in fstat. Returns the empty string if unable to find it.
+    """
+    recs = list(Pyforce('fstat', f'{path}#{revision}'))
+    if not recs:
+        return ''
+    return Pyforce.unescape(recs[0]['headAction'])
+
+
 def o4_seed_from(seed_dir, seed_fstat, op):
     """
     For each target fstat on stdin, copy the matching file from the
@@ -605,11 +616,15 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
                     continue
                 res_str = Pyforce.unescape(res_str)
                 for i, f in enumerate(fstats):
-                    if f"{head}/{f[F_PATH]}" in res_str:
-                        repeats[f"{head}/{f[F_PATH]}"].append(res)
-                        found = fstats.pop(i)
+                    path = f'{head}/{f[F_PATH]}'
+                    if path in res_str:
+                        repeats[path].append(res)
+                        fstats.pop(i)
                         if res['code'] != 'pass':
-                            queued_prints.append(found)
+                            queued_prints.append(f)
+                        if '- resolve skipped' in res.get('data', ''):
+                            if p4_operation(path, f[F_REVISION]).startswith('move/'):
+                                print(f'#o4pass-err#But {path} was renamed')
                         break
                 else:
                     for f in repeats.keys():

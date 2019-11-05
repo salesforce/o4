@@ -1051,6 +1051,17 @@ def o4_fail():
     if not files and not infos and not warnings and not errors:
         sys.exit(0)
 
+    if infos:
+        err_print('*** INFO:\n\t', end='')
+        err_print('\n\t'.join(sorted(infos)))
+
+    if warnings:
+        err_print('*** WARNING:\n\t', end='')
+        err_print('\n\t'.join(sorted(warnings)))
+        if not files and not errors:
+            with open(INCOMPLETE_INDICATOR, 'w') as f:
+                pass
+
     if files:
         err_print('These files did not sync')
         err_print('\n'.join(sorted(files)))
@@ -1060,17 +1071,6 @@ def o4_fail():
     if errors:
         err_print('*** ERROR:\n\t', end='')
         err_print('\n\t'.join(sorted(errors)))
-
-    if warnings:
-        err_print('*** WARNING:\n\t', end='')
-        err_print('\n\t'.join(sorted(warnings)))
-        if not files and not errors:
-            with open(INCOMPLETE_INDICATOR, 'w') as f:
-                pass
-
-    if infos:
-        err_print('*** INFO:\n\t', end='')
-        err_print('\n\t'.join(sorted(infos)))
 
     if warnings and not files and not errors:
         with open(INCOMPLETE_INDICATOR, 'w') as f:

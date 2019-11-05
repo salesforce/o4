@@ -34,9 +34,8 @@ class Pyforce(object):
             timeout = abs(int(os.environ['O4_P4_TIMEOUT']))
         except:
             timeout = 120
-        self.pope = Popen(['p4', f'-vnet.maxwait={timeout}', '-G'] + self.args,
-                          stdout=PIPE,
-                          stderr=self.stderr)
+        self.pope = Popen(
+            ['p4', f'-vnet.maxwait={timeout}', '-G'] + self.args, stdout=PIPE, stderr=self.stderr)
         self.transform = Pyforce.to_str
         self.errors = []
 
@@ -110,7 +109,7 @@ class Pyforce(object):
             err = self.stderr.read().decode(sys.stdout.encoding)
             if 'timed out' in err:
                 raise P4TimeoutError(err)
-            print(f'#o4pass-err#{err})')
+            print(f'#o4pass-err#{err.replace("\n", " ")})')
         if self.errors:
             raise P4Error(*self.errors)
         raise StopIteration()

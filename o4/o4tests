@@ -5,13 +5,13 @@ Writable file:
     p4 sync filename#1
     chmod +w filename
     echo new >>filename
-    o4 sync .
+    o4 sync .      # Cannot use -f
     * INFO messages
     * exit status 0
     * .o4/changelist exists
 
 
-Resolve conflict
+Resolve conflict warning
   client 1
      p4 edit f1
      modify line 1
@@ -24,17 +24,26 @@ Resolve conflict
      # have to sync here in order to get "resolve skipped" on the next sync
      o4 sync .
 
+  * Warning reported
   * f2 has the correct content
 
+Resolve conflict error
+  p4 sync -f ...
+  client 1
+     p4 edit newname
+     modify line 1
+  client 2
+     p4 edit newname
+     modify line 1 differently
+     p4 submit
+  client 1
+     edit f2 # not opened
+     # have to sync here in order to get "resolve skipped" on the next sync
+     o4 sync .@<cl that renamed oldname to newname>
 
+  * Warning reported
+  * Error reported, overriding warning
+  * f2 not synced
+  * Warning reported
+  * f2 has the correct content
 
-
-
-
-
-Questions
------------
-If there is an error in the first o4 pipeline, the parent exits, so
-can still leave files unsynced that would have been synced by a later
-pipeline. Would it be okay to continue on and exit with error if any
-of the pipelines did?

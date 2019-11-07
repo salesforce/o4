@@ -109,7 +109,8 @@ class Pyforce(object):
             err = self.stderr.read().decode(sys.stdout.encoding)
             if 'timed out' in err:
                 raise P4TimeoutError(err)
-            print(f'#o4pass-err#{err.replace("\n", " ")})')
+            nl = '\n'
+            print(f'#o4pass-err#{err.replace(nl, " ")})')
         if self.errors:
             raise P4Error(*self.errors)
         raise StopIteration()

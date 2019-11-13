@@ -52,10 +52,16 @@ class Pyforce(object):
 
         Certain errors are not really errors, it's just p4 being
         silly. Such as the error "No files to reconcile" when you
-        reconcile files that have the correct content. Such errors are
-        converted to code=pass and passed on. Some may also produce a
-        '#o4pass'-prefixed line out stdout, which, in a complete run,
-        will make their way to "o4 fail" and be reported.
+        reconcile files that have the correct content. Such records
+        have their 'code' member reset to a different value and
+        returned.  Some may also produce a '#o4pass'-prefixed line
+        on stdout, which, in a complete run, will make their way to
+        "o4 fail" and be reported.
+
+        The returned record will be sent on to the next item process of
+        the o4 pipeline, unless the 'code' member is 'pass'.
+        Records with code 'error' will be saved up and returned after
+        the iteration is done via a P4Error exception.
         """
         import marshal
         try:
@@ -86,8 +92,8 @@ class Pyforce(object):
                         res[b'code'] = b'pass'
                     elif (b'no file(s) at that changelist number' in data or
                           b'no revision(s) above those at that changelist number' in data):
-                        # print('*** INFO: Skipping premature sync: ', res)
-                        res[b'code'] = b'pass'
+                        print(f'#o4pass-info#{data.decode("utf-8",errors="ignore")}')
+                        res[b'code'] = b'skip'
 
                     # Other specific errors we pass along
                     elif b'clobber writable file' in data:
@@ -98,6 +104,8 @@ class Pyforce(object):
                     # This seems like it could be 100 different messages; we probably need #TODO find out what generic means.
                     elif b'Connection timed out' in data or b'TCP receive exceeded' in data:
                         raise P4TimeoutError(res, self.args)
+                    # At this point, res must either be complete or have
+                    # code == 'skip'.
                     if res[b'code'] != b'error':
                         return self.transform(res)
                 # Allow operation to complete and report errors after
@@ -109,7 +117,8 @@ class Pyforce(object):
             err = self.stderr.read().decode(sys.stdout.encoding)
             if 'timed out' in err:
                 raise P4TimeoutError(err)
-            print(f'#o4pass-err#{err.replace("\n", " ")})')
+            nl = '\n'
+            print(f'#o4pass-err#{err.replace(nl, " ")})')
         if self.errors:
             raise P4Error(*self.errors)
         raise StopIteration()

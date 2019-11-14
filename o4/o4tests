@@ -10,16 +10,20 @@ Writable file:
     * exit status 0
     * .o4/changelist exists
 
+These tests use two clientspecs; some of the steps are
+required in case they're both being used from the same directory.
 
 Resolve conflict warning
   client 1
      p4 edit f1
      modify line 1
+     cp f1 f1.client1
   client 2
      p4 edit f1
      modify line 1 differently
      p4 submit
   client 1
+     chmod +w f1; cp f1.client1 f1
      edit f2 # not opened
      # have to sync here in order to get "resolve skipped" on the next sync
      o4 sync .
@@ -28,18 +32,25 @@ Resolve conflict warning
   * f2 has the correct content
 
 Resolve conflict error
-  p4 sync -f ...
+  client 1
+      p4 sync -f ...
+      rm -f .o4/changelist
+  client 2
+      p4 sync -f ...
+      rm -f .o4/changelist
   client 1
      p4 edit newname
      modify line 1
+     cp newname newname.client1
   client 2
      p4 edit newname
      modify line 1 differently
      p4 submit
   client 1
+     chmod +w newname; cp newname.client1 newname
      edit f2 # not opened
      # have to sync here in order to get "resolve skipped" on the next sync
-     o4 sync .@<cl that renamed oldname to newname>
+     o4 sync .@<cl that renamed oldname to newname> 19649111
 
   * Warning reported
   * Error reported, overriding warning

@@ -1176,7 +1176,7 @@ def parallel_fstat(opts):
 def check_higher_sync(path):
     '''
     Exits with an error if any ancestor directory of the given
-    directory has a .o4 directory with a "head" file.
+    directory has a .o4 directory.
     Stops at the home directory because that .o4 directory does
     not hold syncing information.
     '''
@@ -1185,7 +1185,7 @@ def check_higher_sync(path):
     path = dirname(path)
     while path != '/' and path != home:
         if exists(join(path, '.o4')):
-            sys.exit(f'Cannot sync here; parent directory {path} has been synced.')
+            sys.exit(f'*** ERROR: Cannot sync here; parent directory {path} has been synced.')
         path = dirname(path)
 
 

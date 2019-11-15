@@ -64,12 +64,12 @@ class Pyforce(object):
                 res = marshal.load(self.pope.stdout)
                 if res.get(b'code') == b'info' and res.get(b'data', ''):
                     data = res.get(b'data')
-                    ## Why was this upped to error?
-                    #  b"is opened and not being changed" in data or b"must resolve" in data) and
                     if data.startswith(b'Diff chunks') and not data.endswith(b'+ 0 conflicting'):
                         print("*** WARNING: There are conflicts.", file=sys.stderr)
                     elif (b"can't move (already opened for edit)" in data or
                           b"is opened for add and can't be replaced" in data or
+                          b"is opened and not being changed" in res[b'data'] or
+                          b"must resolve" in res[b'data'] or
                           b"- resolve skipped" in data):
                         res[b'code'] = b'stat'
                         print(f'#o4pass-warn#{data.decode("utf-8",errors="ignore")}')

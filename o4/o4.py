@@ -1173,6 +1173,22 @@ def parallel_fstat(opts):
                           stdin=sin)
 
 
+def check_higher_sync(path):
+    '''
+    Exits with an error if any ancestor directory of the given
+    directory has a .o4 directory with a "head" file.
+    Stops at the home directory because that .o4 directory does
+    not hold syncing information.
+    '''
+    from os.path import dirname, exists, join, expanduser
+    home = expanduser('~')
+    path = dirname(path)
+    while path != '/' and path != home:
+        if exists(join(path, '.o4')):
+            sys.exit(f'Cannot sync here; parent directory {path} has been synced.')
+        path = dirname(path)
+
+
 def add_implicit_args(args):
     import o4_config
 
@@ -1274,6 +1290,7 @@ def main():
             print('*** WARNING: Could not parse @-revision, ignored.')
     opts['<path>'] = depot_abs_path(opts['<path>'])
     target = os.path.join(os.environ['CLIENT_ROOT'], opts['<path>'][2:])
+    check_higher_sync(target)
     o4dir = os.path.join(target, '.o4')
     opts['<path>'] = opts['<path>'] + '/...'
     if opts['-S'] and not opts['-s']:

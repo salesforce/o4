@@ -94,7 +94,8 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from o4_pyforce import Pyforce, P4Error, P4TimeoutError, info as pyforce_info, \
     client as pyforce_client, clear_cache
 from o4_fstat import fstat_from_csv, fstat_iter, fstat_path, \
-    fstat_split, fstat_join, get_fstat_cache, F_REVISION, F_FILE_SIZE, F_CHECKSUM, F_PATH
+    fstat_split, fstat_join, get_fstat_cache, \
+    F_REVISION, F_FILE_SIZE, F_CHECKSUM, F_PATH, F_CHANGELIST
 from o4_progress import progress_iter, progress_show, progress_enabled
 from o4_utils import chdir, consume, o4_log, caseful_accurate
 
@@ -321,7 +322,7 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
         with open(keep, 'rt', encoding='utf8') as fin:
             keep = set(f[:-1] for f in fin)
     for fname in add:
-        print(f"{changelist},{fname.replace(',', ';.')},1,0,DEADFACEDEADFACEDEADFACEDEADFACE")
+        print(f"{changelist},{fname.replace(',', ';.')},USECL,0,DEADFACEDEADFACEDEADFACEDEADFACE")
 
     if previous_cl and previous_cl > changelist:
         # Syncing backwards requires us to delete files that were added
@@ -587,7 +588,13 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
         if no_revision:
             p4paths = [Pyforce.escape(f[F_PATH]) for f in fstats]
         else:
-            p4paths = [f"{Pyforce.escape(f[F_PATH])}#{f[F_REVISION]}" for f in fstats]
+            p4paths = []
+            for f in fstats:
+                rev = f[F_REVISION]
+                if rev == 'USECL':
+                    p4paths.append(f"{Pyforce.escape(f[F_PATH])}@{f[F_CHANGELIST]}")
+                else:
+                    p4paths.append(f"{Pyforce.escape(f[F_PATH])}#{f[F_REVISION]}")
         tmpf.seek(0)
         tmpf.truncate()
         pargs = []

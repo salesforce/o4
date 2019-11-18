@@ -3,9 +3,9 @@
 Usage:
   o4 sync <path> [-v] [-q] [-f] [+o] [-S <seed>] [-s <seed> [--move]] [-m <ignored>]
   o4 clean <path> [-v] [-q] [--resume] [--discard]
-  o4 fstat <paths>... [-q] [-f] [--changed <previous>] [--drop <fname>] [--keep <fname>] [--report <report>]
+  o4 fstat <paths>... [-q] [-f] [--changed <previous>] [--drop <fname>] [--keep <fname>] [--report <report>] [--add <fname>]...
   o4 seed-from <dir> [--fstat <fstat>] [--move]
-  o4 (drop|keep|keep-any) [-v] [--case|--not-case] [--open|--not-open] [--existence|--not-existence] [--checksum|--not-checksum] [--deletes|--not-deletes]
+  o4 (drop|keep|keep-any) [-v] [--case|--not-case] [--open|--not-open] [--existence|--not-existence] [--checksum|--not-checksum] [--deletes|--not-deletes] [--deleted <fname>]...
   o4 drop --havelist
   o4 [-q] pyforce [--debug] [--no-rev] [--] <p4args>...
   o4 head <paths>...
@@ -29,6 +29,7 @@ Option:
   --changed <previous>  Only output fstat for changes in (<previous>,<changelist>]
   --drop <fname>  Remove fstat with path listed in <fname>.
   --keep <fname>  Only keep fstat with path listed in <fname>.
+  --add <fname>  Create dummy entry for fname to help with unsbmitted renames.
   --report <report>  Print the report string with interpolated values after the fstat operation.
   seed-from     Copy files from the seed directory if they match what we want from Perforce.
                 If the named fstat file exists in the seed's .o4, it will be used, otherwise
@@ -51,6 +52,7 @@ Option:
   --deletes        Filter fstat lines that are deletes.
   --not-deletes    Opposite of --deletes
   --havelist       Filter files that are at the revision that the "have" data says they should be.
+  --deleted <fname>  Drops named files if they are deleted (does not exist).
   -q            Skip second pass for sync, or for pyforce/fstat to be quiet.
   -f            Force all files to be verified and synced.
   +o            Do not sync open files.
@@ -92,7 +94,8 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from o4_pyforce import Pyforce, P4Error, P4TimeoutError, info as pyforce_info, \
     client as pyforce_client, clear_cache
 from o4_fstat import fstat_from_csv, fstat_iter, fstat_path, \
-    fstat_split, fstat_join, get_fstat_cache, F_REVISION, F_FILE_SIZE, F_CHECKSUM, F_PATH
+    fstat_split, fstat_join, get_fstat_cache, \
+    F_REVISION, F_FILE_SIZE, F_CHECKSUM, F_PATH, F_CHANGELIST
 from o4_progress import progress_iter, progress_show, progress_enabled
 from o4_utils import chdir, consume, o4_log, caseful_accurate
 
@@ -225,7 +228,7 @@ def o4_seed_from(seed_dir, seed_fstat, op):
             print(line, end='')  # line already ends with '\n'
 
 
-def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=False):
+def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=False, add=None):
     """
     changelist: Target changelist
     previous_cl: Previous_cl if known (otherwise 0)
@@ -273,6 +276,9 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
 
     KEEP: Limit fstat from the stream to paths listed in the
           keep-file.
+
+    ADD:  Creates dummy entries for the given file to facilitate unsibmitted
+          renames between revisions.
     """
 
     if os.environ.get('DEBUG', ''):
@@ -283,16 +289,16 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
 # drop: {drop}
 # keep: {keep}
 # quiet: {quiet}""",
-            file=sys.stderr)
-    o4_log(
-        'fstat',
-        _depot_path(),
-        changelist=changelist,
-        previous_cl=previous_cl,
-        drop=drop,
-        keep=keep,
-        quiet=quiet,
-        force=force)
+              file=sys.stderr)
+    o4_log('fstat',
+           _depot_path(),
+           changelist=changelist,
+           previous_cl=previous_cl,
+           drop=drop,
+           keep=keep,
+           quiet=quiet,
+           force=force,
+           add=add)
 
     if previous_cl:
         previous_cl = int(previous_cl)
@@ -315,6 +321,8 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
     if keep:
         with open(keep, 'rt', encoding='utf8') as fin:
             keep = set(f[:-1] for f in fin)
+    for fname in add:
+        print(f"{changelist},{fname.replace(',', ';.')},USECL,0,DEADFACEDEADFACEDEADFACEDEADFACE")
 
     if previous_cl and previous_cl > changelist:
         # Syncing backwards requires us to delete files that were added
@@ -467,6 +475,15 @@ def o4_filter(filtertype, filters, verbose):
         return (os.path.lexists(row[F_PATH]) and
                 not os.path.isdir(row[F_PATH])) == bool(row[F_CHECKSUM])
 
+    def f_existence(row):
+        """
+        Returns True if the file presence matches the fstat. That is True
+        if fstat says 'delete' and file is missing or True if fstat is
+        not 'delete' and file exists.
+        """
+        return (os.path.lexists(row[F_PATH]) and
+                not os.path.isdir(row[F_PATH])) == bool(row[F_CHECKSUM])
+
     def f_checksum(row):
         if os.path.lexists(row[F_PATH]):
             if not row[F_CHECKSUM]:  # File is deleted
@@ -483,6 +500,16 @@ def o4_filter(filtertype, filters, verbose):
         if invert:
             return f"not({fname})"
         return fname
+
+    named_deleted = []
+    for fname, doit, _ in filters:
+        if doit and fname == 'deleted':
+            named_deleted.extend(doit)
+
+    def f_deleted(row, fnames=named_deleted):
+        if row[F_PATH] in fnames:
+            return not os.path.exists(row[F_PATH])
+        return False
 
     funcs = [inverter(f'f_{fname}(x)', invert) for fname, doit, invert in filters if doit]
     if not funcs:
@@ -561,7 +588,13 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
         if no_revision:
             p4paths = [Pyforce.escape(f[F_PATH]) for f in fstats]
         else:
-            p4paths = [f"{Pyforce.escape(f[F_PATH])}#{f[F_REVISION]}" for f in fstats]
+            p4paths = []
+            for f in fstats:
+                rev = f[F_REVISION]
+                if rev == 'USECL':
+                    p4paths.append(f"{Pyforce.escape(f[F_PATH])}@{f[F_CHANGELIST]}")
+                else:
+                    p4paths.append(f"{Pyforce.escape(f[F_PATH])}#{f[F_REVISION]}")
         tmpf.seek(0)
         tmpf.truncate()
         pargs = []
@@ -877,13 +910,48 @@ def o4_sync(changelist,
         os.remove(SYNCED_CL_FILE)
 
     has_open = list(Pyforce('opened', '...'))
+
+    # [{
+    #     'code': 'stat',
+    #     'depotFile': '//sandbox/t/a',
+    #     'clientFile': '//pbergen-ltm-blt/sandbox/t/a',
+    #     'movedFile': '//sandbox/t/b',
+    #     'rev': '1',
+    #     'haveRev': '2',
+    #     'action': 'move/delete',
+    #     'change': 'default',
+    #     'type': 'text',
+    #     'user': 'pbergen',
+    #     'client': 'pbergen-ltm-blt'
+    # }, {
+    #     'code': 'stat',
+    #     'depotFile': '//sandbox/t/b',
+    #     'clientFile': '//pbergen-ltm-blt/sandbox/t/b',
+    #     'movedFile': '//sandbox/t/a',
+    #     'rev': '2',
+    #     'haveRev': '2',
+    #     'action': 'move/add',
+    #     'change': 'default',
+    #     'type': 'text',
+    #     'user': 'pbergen',
+    #     'client': 'pbergen-ltm-blt'
+    # }]
+
     openf = NamedTemporaryFile(dir='.o4', mode='w+t')
     if has_open:
+        from shlex import quote as shquote
+        move_adds = []
+        move_deletes = []
+
         dep = _depot_path().replace('/...', '')
         print(f'*** INFO: Opened for edit in {dep}:')
         for i, p in enumerate(has_open):
             open_file_name = Pyforce.unescape(p['depotFile'])[len(dep) + 1:]
             print(open_file_name, file=openf)
+            if p['action'] == 'move/add':
+                move_adds.append(shquote(open_file_name))
+            if p['action'] == 'move/delete':
+                move_deletes.append(shquote(open_file_name))
             if i < 10:
                 print(f'*** INFO: --keeping {open_file_name}')
         if len(has_open) > 10:
@@ -891,15 +959,27 @@ def o4_sync(changelist,
         openf.flush()
 
         # Resolve before syncing in case there are unresolved files for other reasons
-        cmd = (f"{fstat} --keep {openf.name}"
-               f"| {gatling_verbose} -- {o4bin} {pyforce} --no-rev -- resolve -am"
-               f"| {o4bin} {pyforce} sync"
-               f"| {gatling_verbose} -- {o4bin} {pyforce} --no-rev -- resolve -am"
-               f"{progress}"
-               f"| {o4bin} drop --existence"
-               f"| {gatling_verbose} -- {o4bin} {pyforce} --no-rev -- revert"
-               f"| {o4bin} drop --existence"
-               f"| {o4bin} fail")
+        move_add = ''
+        if move_adds:
+            move_add = ' --add '.join([''] + move_adds)
+        move_delete = ''
+        if move_deletes:
+            move_delete = ' --deleted '.join([''] + move_deletes)
+            move_delete = f"| {o4bin} drop {move_delete}"
+
+        cmd = (
+            f"{fstat} --keep {openf.name}{move_add}"
+            f"| {gatling_verbose} -- {o4bin} {pyforce} --no-rev -- resolve -am"
+            f"| {o4bin} {pyforce} sync"
+            f"| {gatling_verbose} -- {o4bin} {pyforce} --no-rev -- resolve -am"
+            f"{progress}"
+            f"{move_delete}"
+            f"| {o4bin} drop --existence"
+            # Why this revert? Doesn't that risk losing all local changes??
+            f"| {gatling_verbose} -- {o4bin} {pyforce} --no-rev -- revert"
+            f"{move_delete}"
+            f"| {o4bin} drop --existence"
+            f"| {o4bin} fail")
         # Unopened only from here on
         fstat += f' --drop {openf.name}'
         if not skip_opened:
@@ -1232,6 +1312,7 @@ def main():
                     ('case', opts['--not-case'], True),
                     ('open', opts['--open'], False),
                     ('open', opts['--not-open'], True),
+                    ('deleted', opts['--deleted'], False),
                 ), opts['-v'])
         if opts['pyforce']:
             ran = True
@@ -1306,7 +1387,7 @@ def main():
     try:
         if opts['fstat']:
             actual_cl = o4_fstat(opts['@'], opts['--changed'], opts['--drop'], opts['--keep'],
-                                 opts['-q'], opts['-f'])
+                                 opts['-q'], opts['-f'], opts['--add'])
             if opts['--report']:
                 print(opts['--report'].format(**locals()))
         if opts['sync']:

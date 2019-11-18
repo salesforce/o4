@@ -1250,11 +1250,25 @@ def check_higher_sync(path):
     not hold syncing information.
     '''
     from os.path import dirname, exists, join, expanduser
+
+    def newer_o4(d1, d2):
+        try:
+            s1 = os.stat(join(d1, '.o4', 'changelist'))
+            s2 = os.stat(join(d2, '.o4', 'changelist'))
+            return s1.st_mtime > s2.st_mtime
+        except:
+            return False
+            
     home = expanduser('~')
-    path = dirname(path)
-    while path != '/' and path != home:
-        if exists(join(path, '.o4')):
-            sys.exit(f'*** ERROR: Cannot sync here; parent directory {path} has been synced.')
+    parent = dirname(path)
+    while parent != '/' and parent != home:
+        if exists(join(parent, '.o4')):
+            if newer_o4(path, parent):
+                try:
+                    os.remove(join(parent, '.o4', 'changelist'))
+                except: 
+                    pass
+            sys.exit(f'*** ERROR: o4 cannot sync {path}; parent directory {parent} has been synced.')
         path = dirname(path)
 
 

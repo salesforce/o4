@@ -282,8 +282,7 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
     """
 
     if os.environ.get('DEBUG', ''):
-        print(
-            f"""# o4 fstat {os.getcwd()}
+        print(f"""# o4 fstat {os.getcwd()}
 # changelist: {changelist}
 # previous_cl: {previous_cl}
 # drop: {drop}
@@ -330,18 +329,16 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
         # be synced to their state at the lower changelist.
         past_filenames = set(p for p, _ in map(
             fstat_path,
-            progress_iter(
-                fstat_iter(_depot_path(), changelist),
-                os.getcwd() + '/.o4/.fstat', 'fstat-reverse')) if p)
+            progress_iter(fstat_iter(_depot_path(), changelist),
+                          os.getcwd() + '/.o4/.fstat', 'fstat-reverse')) if p)
         if not keep:
             keep = set()
         if not drop:
             drop = set()
         for f in map(
                 fstat_split,
-                progress_iter(
-                    fstat_iter(_depot_path(), previous_cl, changelist),
-                    os.getcwd() + '/.o4/.fstat', 'fstat-reverse')):
+                progress_iter(fstat_iter(_depot_path(), previous_cl, changelist),
+                              os.getcwd() + '/.o4/.fstat', 'fstat-reverse')):
             if not f:
                 continue
             if f[F_PATH] not in past_filenames:
@@ -366,9 +363,8 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
     if not keep:
         keep = None
 
-    fstats = progress_iter(
-        fstat_iter(_depot_path(), changelist, previous_cl),
-        os.getcwd() + '/.o4/.fstat', 'fstat')
+    fstats = progress_iter(fstat_iter(_depot_path(), changelist, previous_cl),
+                           os.getcwd() + '/.o4/.fstat', 'fstat')
     # Can't break out of fstat_iter without risking that the local
     # cache is not created, causing fstat_from_perforce to be called
     # twice, so we use an iterator that we can drain.
@@ -577,10 +573,9 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
         if f and caseful_accurate(f[F_PATH]):
             fstats.append(f)
         elif f:
-            print(
-                f"*** WARNING: Pyforce is skipping {f[F_PATH]} because it is casefully",
-                "mismatching a local file.",
-                file=sys.stderr)
+            print(f"*** WARNING: Pyforce is skipping {f[F_PATH]} because it is casefully",
+                  "mismatching a local file.",
+                  file=sys.stderr)
     retries = 3
     head = _depot_path().replace('/...', '')
     client_head = _client_path().replace('/...', '')
@@ -866,22 +861,20 @@ def o4_sync(changelist,
             try:
                 previous_cl = int(fin.read().strip())
             except ValueError:
-                print(
-                    "{CLR}*** WARNING: {os.getcwd()}/.o4/changelist could not be read",
-                    file=sys.stderr)
+                print("{CLR}*** WARNING: {os.getcwd()}/.o4/changelist could not be read",
+                      file=sys.stderr)
 
-    o4_log(
-        'sync',
-        changelist=changelist,
-        previous_cl=previous_cl,
-        seed=seed,
-        seed_move=seed_move,
-        quick=quick,
-        force=force,
-        skip_opened=skip_opened,
-        verbose=verbose,
-        gatling=gatling,
-        manifold=manifold)
+    o4_log('sync',
+           changelist=changelist,
+           previous_cl=previous_cl,
+           seed=seed,
+           seed_move=seed_move,
+           quick=quick,
+           force=force,
+           skip_opened=skip_opened,
+           verbose=verbose,
+           gatling=gatling,
+           manifold=manifold)
 
     verbose = ' -v' if verbose else ''
     force = ' -f' if force else ''
@@ -967,19 +960,16 @@ def o4_sync(changelist,
             move_delete = ' --deleted '.join([''] + move_deletes)
             move_delete = f"| {o4bin} drop {move_delete}"
 
-        cmd = (
-            f"{fstat} --keep {openf.name}{move_add}"
-            f"| {gatling_verbose} -- {o4bin} {pyforce} --no-rev -- resolve -am"
-            f"| {o4bin} {pyforce} sync"
-            f"| {gatling_verbose} -- {o4bin} {pyforce} --no-rev -- resolve -am"
-            f"{progress}"
-            f"{move_delete}"
-            f"| {o4bin} drop --existence"
-            # Why this revert? Doesn't that risk losing all local changes??
-            f"| {gatling_verbose} -- {o4bin} {pyforce} --no-rev -- revert"
-            f"{move_delete}"
-            f"| {o4bin} drop --existence"
-            f"| {o4bin} fail")
+        cmd = (f"{fstat} --keep {openf.name}{move_add}"
+               f"| {gatling_verbose} -- {o4bin} {pyforce} sync"
+               f"| {gatling_verbose} -- {o4bin} {pyforce} --no-rev -- resolve -am"
+               f"{progress}"
+               f"{move_delete}"
+               f"| {o4bin} drop --existence"
+               f"| {gatling_verbose} -- {o4bin} {pyforce} --no-rev -- revert"
+               f"{move_delete}"
+               f"| {o4bin} drop --existence"
+               f"| {o4bin} fail")
         # Unopened only from here on
         fstat += f' --drop {openf.name}'
         if not skip_opened:
@@ -1215,10 +1205,9 @@ def o4_head(paths):
     for retry in range(3):
         try:
             end = '' if len(args) > 1 else args[0]
-            print(
-                f"# {CLR}*** INFO: ({retry+1}/3) Retrieving HEAD changelist for",
-                end,
-                file=sys.stderr)
+            print(f"# {CLR}*** INFO: ({retry+1}/3) Retrieving HEAD changelist for",
+                  end,
+                  file=sys.stderr)
             if not end:
                 for path in args:
                     print(f"      {path}")

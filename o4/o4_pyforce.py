@@ -34,8 +34,9 @@ class Pyforce(object):
             timeout = abs(int(os.environ['O4_P4_TIMEOUT']))
         except:
             timeout = 120
-        self.pope = Popen(
-            ['p4', f'-vnet.maxwait={timeout}', '-G'] + self.args, stdout=PIPE, stderr=self.stderr)
+        self.pope = Popen(['p4', f'-vnet.maxwait={timeout}', '-G'] + self.args,
+                          stdout=PIPE,
+                          stderr=self.stderr)
         self.transform = Pyforce.to_str
         self.errors = []
 
@@ -76,8 +77,8 @@ class Pyforce(object):
                         pass
                     elif (b"can't move (already opened for edit)" in data or
                           b"is opened for add and can't be replaced" in data or
-                          b"is opened and not being changed" in res[b'data'] or
-                          b"must resolve" in res[b'data'] or
+                          # b"is opened and not being changed" in res[b'data'] or
+                          # b"must resolve" in res[b'data'] or
                           b"- resolve skipped" in data):
                         res[b'code'] = b'pass'
                         print(f'#o4pass-warn#{data.decode("utf-8",errors="ignore")}')

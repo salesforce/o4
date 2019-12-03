@@ -1269,7 +1269,7 @@ def check_higher_sync(path):
                 except: 
                     pass
             sys.exit(f'*** ERROR: o4 cannot sync {path}; parent directory {parent} has been synced.')
-        path = dirname(path)
+        parent = dirname(parent)
 
 
 def add_implicit_args(args):

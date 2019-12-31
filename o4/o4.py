@@ -1249,6 +1249,7 @@ def check_higher_sync(path):
     Stops at the home directory because that .o4 directory does
     not hold syncing information.
     '''
+    return 'Removing because of an apparent infinite loop'
     from os.path import dirname, exists, join, expanduser
 
     def newer_o4(d1, d2):

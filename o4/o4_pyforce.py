@@ -81,7 +81,7 @@ class Pyforce(object):
                           # b"must resolve" in res[b'data'] or
                           b"- resolve skipped" in data):
                         res[b'code'] = b'pass'
-                        print(f'#o4pass-warn#{data.decode("utf-8",errors="ignore")}')
+                        print(f'#o4pass-err#{data.decode("utf-8",errors="ignore")}')
                 if res.get(b'code') != b'error':
                     return self.transform(res)
                 if data:

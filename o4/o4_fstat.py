@@ -333,11 +333,13 @@ def fstat_iter(depot_path, to_changelist, from_changelist=0, cache_dir='.o4'):
             except FstatRedirection as e:
                 print(f'*** INFO: Fstat server redirected to changelist {e.cl}', file=sys.stderr)
                 if e.cl > to_changelist:
-                    print(f'*** WARNING: Fstat server redirected to {e.cl} which is greater',
-                          f'than {to_changelist}.',
-                          file=sys.stderr)
-                    print('             Please contact workspaceengineering@salesforce.com.',
-                          file=sys.stderr)
+                    print(
+                        f'*** WARNING: Fstat server redirected to {e.cl} which is greater',
+                        f'than {to_changelist}.',
+                        file=sys.stderr)
+                    print(
+                        '             Please contact workspaceengineering@salesforce.com.',
+                        file=sys.stderr)
                 elif e.cl > cache_cl:
                     missing_range = (to_changelist, e.cl + 1)
                     o4server_range = (e.cl, cache_cl + 1)
@@ -376,8 +378,9 @@ def fstat_iter(depot_path, to_changelist, from_changelist=0, cache_dir='.o4'):
                                 f"{CLR}*** ERROR: 'Request too large'. {depot_path} may be too broad."
                             )
                         elif 'no such file' in a.get('data', ''):
-                            print(f"{CLR}*** INFO: Empty changelist range ({missing_range}).",
-                                  file=sys.stderr)
+                            print(
+                                f"{CLR}*** INFO: Empty changelist range ({missing_range}).",
+                                file=sys.stderr)
                             # Just an empty range of changelists, we are done
                             done = True
                             break
@@ -387,8 +390,9 @@ def fstat_iter(depot_path, to_changelist, from_changelist=0, cache_dir='.o4'):
                         break
                 except P4TimeoutError:
                     perforce_filenames.clear()
-                    print(f"{CLR}*** WARNING: ({retry+1}/3) P4 Timeout while getting fstat",
-                          file=sys.stderr)
+                    print(
+                        f"{CLR}*** WARNING: ({retry+1}/3) P4 Timeout while getting fstat",
+                        file=sys.stderr)
             else:
                 sys.exit(f"{CLR}*** ERROR: "
                          f"Too many P4 Timeouts for p4 fstat"
@@ -461,9 +465,8 @@ def fstat_iter(depot_path, to_changelist, from_changelist=0, cache_dir='.o4'):
         data = summary[k] if summary[k] else ('Not used', '')
         if summary[k]:
             v = summary[k]
-            data = ('{:10,} - {:10,}'.format(
-                (v[0][0] or 0), (v[0][1] or 0)), '{:10,} - {:10,}'.format((v[1][0] or 0),
-                                                                          (v[1][1] or 0)))
+            data = ('{:10,} - {:10,}'.format((v[0][0] or 0), (v[0][1] or 0)),
+                    '{:10,} - {:10,}'.format((v[1][0] or 0), (v[1][1] or 0)))
         else:
             data = ('Not used', '')
         table.add_row([k, data[0], data[1]])
@@ -522,11 +525,12 @@ def fstat_from_server(depot_path, upper, lower, nearby=None):
     url = f'{o4_config.fstat_server()}/o4-http/fstat/{upper}/{depot_path}'
     if nearby:
         url += f'?nearby={nearby}'
-    server = requests.get(url,
-                          stream=True,
-                          allow_redirects=False,
-                          auth=o4_config.fstat_server_auth(),
-                          verify=o4_config.fstat_server_cert())
+    server = requests.get(
+        url,
+        stream=True,
+        allow_redirects=False,
+        auth=o4_config.fstat_server_auth(),
+        verify=o4_config.fstat_server_cert())
     if server.status_code == 404:
         raise Exception(f'Unknown fstat request:  {url}')
     if server.status_code // 100 == 3:

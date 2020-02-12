@@ -149,9 +149,8 @@ def fstat_server_cert():
         return None
     path = _expand(path)
     if not os.path.exists(path):
-        print(
-            '*** WARNING: Specified certificate file for the fstat server does not exist.',
-            file=sys.stderr)
+        print('*** WARNING: Specified certificate file for the fstat server does not exist.',
+              file=sys.stderr)
         print('             ' + path, file=sys.stderr)
         return None
     return path

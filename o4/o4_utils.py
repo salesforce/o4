@@ -111,13 +111,12 @@ def o4_log(operation, *args, **kw):
     """
     import time
     with open(f'.o4/{operation}.log', 'at+') as fout:
-        print(
-            time.ctime(),
-            operation,
-            *[f'{k}={v}' for k, v in kw.items()],
-            *args,
-            sep='\t',
-            file=fout)
+        print(time.ctime(),
+              operation,
+              *[f'{k}={v}' for k, v in kw.items()],
+              *args,
+              sep='\t',
+              file=fout)
 
 
 ##

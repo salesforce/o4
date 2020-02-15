@@ -2,6 +2,7 @@
 """
 Usage:
   o4 sync <path> [-v] [-q] [-f] [+o] [-S <seed>] [-s <seed> [--move]] [-m <ignored>]
+  o4 status <path>
   o4 clean <path> [-v] [-q] [--resume] [--discard]
   o4 fstat <paths>... [-q] [-f] [--changed <previous>] [--drop <fname>] [--keep <fname>] [--report <report>] [--add <fname>]...
   o4 seed-from <dir> [--fstat <fstat>] [--move]
@@ -15,6 +16,7 @@ Usage:
 
 Option:
   sync          Sync/verify <path>.
+  status        Similar to git status, verifies the files in <path> against fstat records.
   clean         Clean <path>.
   <path>        Specify perforce style path, optionally specify "@changelist", if not given, head
                 will be determined. If path is a directory, "/..." is implied.
@@ -884,8 +886,7 @@ def o4_sync(changelist,
     manifold_verbose = man(f"manifold{verbose}")
     progress = f"| {o4bin} progress" if sys.stdin.isatty() and progress_enabled() else ''
     pyforce = 'pyforce'  #pyforce = 'pyforce' + (' --debug --' if os.environ.get('DEBUG', '') else '')
-    casefilter = ' --case' if sys.platform == 'darwin' else ''
-    keep_case = f'| {o4bin} keep --case' if casefilter else ''
+    keep_case = f'| {o4bin} keep --case' if sys.platform == 'darwin' else ''
     if previous_cl == changelist and not force:
         print(f'*** INFO: {os.getcwd()} is already synced to {changelist}, use -f to force a'
               f' full verification.')
@@ -1031,6 +1032,100 @@ def o4_sync(changelist,
     if previous_cl == actual_cl and not force:
         print(f'*** INFO: {os.getcwd()} is already synced to {actual_cl}, use -f to force a'
               f' full verification.')
+
+
+def o4_status(changelist, depot):
+    from subprocess import run, PIPE
+    from pprint import pprint
+
+    o4bin = find_o4bin()
+    manibin = os.path.join(os.path.dirname(o4bin), 'manifold')
+    here = os.getcwd()
+    depot = depot.rstrip('.')
+
+    print(f"*** INFO: o4 status {here}")
+    if not os.path.isdir('.o4'):
+        print("Never synced with o4.")
+        return
+    try:
+        cur = int(open('.o4/changelist').read().strip())
+    except ValueError:
+        print("*** WARNING: .o4/changelist is invalid.")
+        cur = None
+    except FileNotFoundError:
+        print("*** WARNING: .o4/changelist is missing.")
+        cur = None
+    if cur is None:
+        cur, fname = get_fstat_cache(changelist)
+    if cur is None:
+        print("*** ERROR: Current changelist could not be determined.")
+        return
+
+    print(f"Current changelist: {cur:,d}")
+    print(f"  - HEAD is {changelist:,d} (+{changelist-cur:,d})")
+
+    keep_case = f'| {o4bin} keep --case ' if sys.platform == 'darwin' else ''
+    cmd = f"{o4bin} fstat .@{cur} {keep_case}| {manibin} o4 drop --checksum"
+    print(f"Checksumming ({cmd}).")
+    print("Please be patient...")
+    res = run(cmd, stdout=PIPE, shell=True, universal_newlines=True)
+    crcs = {
+        f[F_PATH]: f
+        for f in sorted((fstat_split(f) for f in res.stdout.splitlines()),
+                        key=lambda x: x[F_PATH])
+    }
+
+    has_open = {f['depotFile'].replace(depot, ''): f for f in Pyforce('opened', '...')}
+
+    # [{
+    #     'code': 'stat',
+    #     'depotFile': '//sandbox/t/a',
+    #     'clientFile': '//pbergen-ltm-blt/sandbox/t/a',
+    #     'movedFile': '//sandbox/t/b',
+    #     'rev': '1',
+    #     'haveRev': '2',
+    #     'action': 'move/delete',
+    #     'change': 'default',
+    #     'type': 'text',
+    #     'user': 'pbergen',
+    #     'client': 'pbergen-ltm-blt'
+    # }, {
+    naughty = set(crcs.keys()) - set(has_open.keys())
+    renamed = {
+        k: v['movedFile'].replace(depot, '')
+        for k, v in has_open.items() if v.get('action') == 'move/delete'
+    }
+    missing = {f for f in crcs.keys() if f not in renamed and not os.path.exists(f)}
+    all_fnames = set(list(has_open.keys()) + list(crcs.keys()))
+
+    if all_fnames:
+        print("\nFiles with local modifications:")
+        print(" (!=Mismatch A=Added D=Deleted O=Open R=Renamed)\n")
+
+    for f in sorted(all_fnames):
+        ho = has_open.get(f, {})
+        if ho.get('action') == 'move/add':
+            continue
+
+        n = '!' if f in naughty else ' '
+        m = ' '
+        if f in missing:
+            m = 'D'
+        if f in crcs:
+            m = 'M'
+        r = ' '
+        fn = f
+        if f in renamed:
+            r = 'R'
+            c = crcs[f]
+            m = ' ' if Pyforce.checksum(renamed[f], c[F_FILE_SIZE]) == c[F_CHECKSUM] else 'M'
+            fn = f"{f} -> {renamed[f]}"
+        if ho.get('action') == 'add':
+            m = 'A'
+        if m == ' ' and f in has_open:
+            m = 'O'
+        print(f" {n}{r}{m}  {fn}")
+    return True
 
 
 def get_clean_cl(opts):
@@ -1393,6 +1488,8 @@ def main():
                                  opts['-q'], opts['-f'], opts['--add'])
             if opts['--report']:
                 print(opts['--report'].format(**locals()))
+        if opts['status']:
+            o4_status(opts['@'], opts['<path>'])
         if opts['sync']:
             if opts['-m']:
                 print("*** WARNING: sync -m is deprecated.")

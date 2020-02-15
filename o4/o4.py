@@ -1100,7 +1100,7 @@ def o4_status(changelist, depot):
 
     if all_fnames:
         print("\nFiles with local modifications:")
-        print(" (!=Mismatch A=Added D=Deleted O=Open R=Renamed)\n")
+        print(" (!=Mismatch A=Added D=Deleted M=Modified O=Open R=Renamed)\n")
 
     for f in sorted(all_fnames):
         ho = has_open.get(f, {})

@@ -1164,7 +1164,7 @@ def o4_clean(changelist, quick=False, resume=False, discard=False):
     def move_except(from_dir, to_dir, but_not):
         with chdir(from_dir):
             for f in os.listdir('.'):
-                if f != but_not:
+                if f not in but_not:
                     shutil.move(f, f'{to_dir}/{f}')
 
     target = os.getcwd()
@@ -1174,8 +1174,8 @@ def o4_clean(changelist, quick=False, resume=False, discard=False):
             sys.exit(f'*** ERROR: Cannot resume cleaning; {source} does not exist.')
     else:
         os.makedirs(f'{source}/.o4', exist_ok=True)
-        move_except(f'{target}/.o4', f'{source}/.o4', but_not='cleaning')
-        move_except(target, source, but_not='.o4')
+        move_except(f'{target}/.o4', f'{source}/.o4', but_not=('cleaning','cleaned'))
+        move_except(target, source, but_not=['.o4'])
 
         dep = _depot_path().replace('/...', '')
         p4open = [
@@ -1197,11 +1197,40 @@ def o4_clean(changelist, quick=False, resume=False, discard=False):
     check_call(cmd)
     if not discard:
         savedir = source.replace('cleaning', time.strftime('cleaned'))  # @%Y-%m-%d,%H:%M'))
+        if os.path.exists(savedir):
+            shutil.rmtree(savedir)
         shutil.move(source, savedir)
-        err_print(f'*** INFO: Directory is clean @{changelist}; detritus is in {savedir}')
+        if os.path.exists(f'{savedir}/.o4'):
+            shutil.rmtree(f'{savedir}/.o4')
+        n_files = rm_empty_dirs(savedir)
+        err_print(f'*** INFO: Directory is clean @{changelist}')
+        err_print(f'*** INFO: {n_files} dirty files remain under {savedir}')
     else:
         assert source.endswith('cleaning')
         shutil.rmtree(source)
+
+
+def rm_empty_dirs(root):
+    '''
+    Given a directory tree, remove all directories that have only
+    directories beneath them. Return the number of non-directory files
+    remaining.
+    '''
+    nondirs = 0
+
+    def rmed(dname):
+        nonlocal nondirs
+        save_nondirs = nondirs
+        with chdir(dname):
+            for f in os.listdir('.'):
+                if os.path.isdir(f):
+                    if rmed(os.path.join(dname, f)):
+                        os.rmdir(os.path.join(dname, f))
+                else:
+                    nondirs += 1
+        return nondirs == save_nondirs
+    rmed(root)
+    return nondirs
 
 
 def o4_fail():

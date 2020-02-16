@@ -1071,8 +1071,7 @@ def o4_status(changelist, depot):
     res = run(cmd, stdout=PIPE, shell=True, universal_newlines=True)
     crcs = {
         f[F_PATH]: f
-        for f in sorted((fstat_split(f) for f in res.stdout.splitlines()),
-                        key=lambda x: x[F_PATH])
+        for f in sorted((fstat_split(f) for f in res.stdout.splitlines()), key=lambda x: x[F_PATH])
     }
 
     has_open = {f['depotFile'].replace(depot, ''): f for f in Pyforce('opened', '...')}
@@ -1093,7 +1092,8 @@ def o4_status(changelist, depot):
     naughty = set(crcs.keys()) - set(has_open.keys())
     renamed = {
         k: v['movedFile'].replace(depot, '')
-        for k, v in has_open.items() if v.get('action') == 'move/delete'
+        for k, v in has_open.items()
+        if v.get('action') == 'move/delete'
     }
     missing = {f for f in crcs.keys() if f not in renamed and not os.path.exists(f)}
     all_fnames = set(list(has_open.keys()) + list(crcs.keys()))
@@ -1169,6 +1169,13 @@ def o4_clean(changelist, quick=False, resume=False, discard=False):
 
     target = os.getcwd()
     source = f'{target}/.o4/cleaning'
+    cleaned = f'{target}/.o4/cleaned'
+    if rm_empty_dirs(cleaned):
+        print(f'*** ERROR: Unhandled files still exist from a previous clean run.')
+        print(f'           Please delete (if unwanted) or move files from {cleaned}')
+        print(f'           back to its place in {target}.')
+        sys.exit(1)
+
     if resume:
         if not os.path.exists(source):
             sys.exit(f'*** ERROR: Cannot resume cleaning; {source} does not exist.')
@@ -1204,7 +1211,10 @@ def o4_clean(changelist, quick=False, resume=False, discard=False):
             shutil.rmtree(f'{savedir}/.o4')
         n_files = rm_empty_dirs(savedir)
         err_print(f'*** INFO: Directory is clean @{changelist}')
-        err_print(f'*** INFO: {n_files} dirty files remain under {savedir}')
+        if n_files:
+            err_print(f'          {n_files} dirty files remain under {savedir}')
+        else:
+            err_print(f'          Congratulations! No dirty files left over.')
     else:
         assert source.endswith('cleaning')
         shutil.rmtree(source)

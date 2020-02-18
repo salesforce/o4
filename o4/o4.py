@@ -1101,8 +1101,10 @@ def o4_status(changelist, depot):
     if all_fnames:
         print("\nFiles with local modifications:")
         print(" (!=Mismatch A=Added D=Deleted M=Modified O=Open R=Renamed)\n")
+    else:
+        print("*** INFO: No problems found :)")
+        return True
 
-    problems = False
     for f in sorted(all_fnames):
         ho = has_open.get(f, {})
         if ho.get('action') == 'move/add':
@@ -1126,10 +1128,6 @@ def o4_status(changelist, depot):
         if m == ' ' and f in has_open:
             m = 'O'
         print(f" {n}{r}{m}  {fn}")
-        problems = True
-
-    if not problems:
-        print("*** INFO: No problems found :)")
     return True
 
 

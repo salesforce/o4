@@ -1129,7 +1129,7 @@ def o4_status(changelist, depot):
         problems = True
 
     if not problems:
-        print("*** INFO No problems found :)"
+        print("*** INFO No problems found :)")
     return True
 
 

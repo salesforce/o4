@@ -1088,7 +1088,8 @@ def o4_status(changelist, depot, check_all, quick):
     keep_case = f'| {o4bin} keep --case' if sys.platform == 'darwin' else ''
     drop_deleted = f"| grep -v ',$'" if not check_all else ''
     changed = f" --changed {cur*4//5}" if quick else ''
-    cmd = f"{o4bin} fstat -v .@{cur}{changed}{drop_deleted}| {manibin} o4 drop --checksum{keep_case}"
+    cmd = (f"{o4bin} fstat -v .@{cur}{changed}{drop_deleted}"
+           f"| {manibin} {o4bin} drop --checksum{keep_case}")
     print(f"Checksumming ({cmd.replace('/usr/local/bin/', '')}).")
     if not check_all:
         print("Skipping deleted files.")

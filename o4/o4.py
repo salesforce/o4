@@ -646,7 +646,7 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
                     if path in res_str:
                         repeats[path].append(res)
                         fstats.pop(i)
-                        if res['code'] != 'pass':
+                        if res['code'] != 'mute':
                             queued_prints.append(f)
                         if '- resolve skipped' in res.get('data', ''):
                             if p4_operation(path, f[F_REVISION]).startswith('move/'):

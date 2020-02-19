@@ -1065,7 +1065,7 @@ def o4_status(changelist, depot):
     print(f"  - HEAD is {changelist:,d} (+{changelist-cur:,d})")
 
     keep_case = f'| {o4bin} keep --case ' if sys.platform == 'darwin' else ''
-    cmd = f"{o4bin} fstat .@{cur}| {manibin} -v o4 drop --checksum{keep_case}"
+    cmd = f"{o4bin} fstat .@{cur}| {manibin} o4 drop --checksum{keep_case}"
     print(f"Checksumming ({cmd}).")
     print("Please be patient...")
     res = run(cmd, stdout=PIPE, shell=True, universal_newlines=True)

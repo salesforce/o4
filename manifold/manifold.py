@@ -1,9 +1,17 @@
 def main():
     import sys
     import gatling
+#    import cProfile
 
     sys.argv.insert(1, 'manifold')
+
+#    pr = cProfile.Profile()
+#    pr.enable()
     gatling.main()
+#    pr.create_stats()
+ #   pr.dump_stats(f"/tmp/manifold.prof")
+ #   print("Dumped profile in", f"/tmp/manifold.prof", file=sys.stderr)
+ #   echo -n 'sort\nstats'|python -m pstats /tmp/manifold.prof
 
 
 ##

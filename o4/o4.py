@@ -1086,10 +1086,10 @@ def o4_status(changelist, depot, check_all, quick):
 
     os.environ['O4_PROGRESS'] = 'false'
     keep_case = f'| {o4bin} keep --case' if sys.platform == 'darwin' else ''
-    drop_deleted = f"| grep -v ',$' " if not check_all else ''
+    drop_deleted = f"| grep -v ',$'" if not check_all else ''
     changed = f" --changed {cur*4//5}" if quick else ''
     cmd = f"{o4bin} fstat -v .@{cur}{changed}{drop_deleted}| {manibin} o4 drop --checksum{keep_case}"
-    print(f"Checksumming ({cmd}).")
+    print(f"Checksumming ({cmd.replace('/usr/local/bin/', '')}).")
     if not check_all:
         print("Skipping deleted files.")
     if quick:
@@ -1131,7 +1131,7 @@ def o4_status(changelist, depot, check_all, quick):
         print("\nFiles with local modifications:")
         print(" (!=Checksum fail A=Added D=Deleted M=Modified O=Open R=Renamed)\n")
     else:
-        print("*** INFO: All files passed the checksum test.")
+        print("*** INFO: All files passed the checksum test and no files are open for edit.")
         return True
 
     for f in sorted(all_fnames):

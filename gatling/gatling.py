@@ -14,7 +14,7 @@ is invoked or by an optional first argument (gatling|manifold):
  * gatling: best for commands that communicate with remote servers
    (e.g. p4)
 
- * manifold: best for commands that consume mainly local resources 
+ * manifold: best for commands that consume mainly local resources
    (e.g. md5)
 
 In manifold mode a child process is created for each block read, until
@@ -235,8 +235,16 @@ def distribute(cmd, max_bytes, max_procs, chunk_size, round_robin, verbose):
         for d in p_filled:
             d.kill()
         raise
+
+# This method, for unknown reason, leads to busy wait and an explosion in CPU consumption
+#    while p_filled:
+#        res.append(p_filled.pop(0).wait())
     while p_filled:
-        res.append(p_filled.pop(0).wait())
+        sleep(0.5)
+        tmp = [p.poll() for p in p_filled]
+        for i, rt in reversed(list(enumerate(tmp))):
+            if rt is not None:
+                res.append(p_filled.pop(i).wait())
 
     if sel_t:
         not_done.pop()

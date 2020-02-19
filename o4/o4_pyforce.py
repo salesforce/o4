@@ -80,24 +80,21 @@ class Pyforce(object):
                           # b"is opened and not being changed" in res[b'data'] or
                           # b"must resolve" in res[b'data'] or
                           b"- resolve skipped" in data):
-                        res[b'code'] = b'pass'
+                        res[b'code'] = b'mute'
                         print(f'#o4pass-err#{data.decode("utf-8",errors="ignore")}')
                 if res.get(b'code') != b'error':
                     return self.transform(res)
                 if data:
                     # For messages that aren't errors at all, change their code and return
-                    if (b'file(s) up-to-date' in data or False):
-                        res[b'code'] = b'info'
-                    elif (b'no file(s) to reconcile' in data or
+                    if (b'file(s) up-to-date' in data or b'no file(s) to reconcile' in data or
                             b'no file(s) to resolve' in data or b'no file(s) to unshelve' in data or
                             b'file(s) not on client' in data or
                             b'No shelved files in changelist to delete' in data):
-                        res[b'code'] = b'pass'
+                        res[b'code'] = b'stat'
                     elif (b'no file(s) at that changelist number' in data or
                           b'no revision(s) above those at that changelist number' in data):
                         print(f'#o4pass-info#{data.decode("utf-8",errors="ignore")}')
-                        res[b'code'] = b'skip'
-
+                        res[b'code'] = b'mute'
                     # Other specific errors we pass along
                     elif b'clobber writable file' in data:
                         res[b'code'] = b'error'

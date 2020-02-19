@@ -105,7 +105,7 @@ class Pyforce(object):
                     elif b'Connection timed out' in data or b'TCP receive exceeded' in data:
                         raise P4TimeoutError(res, self.args)
                     # At this point, res must either be complete or have
-                    # code == 'skip'.
+                    # code == 'mute'.
                     if res[b'code'] != b'error':
                         return self.transform(res)
                 # Allow operation to complete and report errors after

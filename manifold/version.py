@@ -10,6 +10,6 @@ PRODUCT = 'manifold/version.py'
 REQ_MD5 = '66d2b20c6fa5c95ac17a05d908889c66'
 PY_MD5 = '310fb4bdb5394de6d59ea0187bfe9d97'
 
-TIMESTAMP = datetime.datetime(2020, 2, 19, 3, 7, 44, 292584)
+TIMESTAMP = datetime.datetime(2020, 2, 19, 17, 59, 56, 124011)
 USER_NAME = 'Philip Bergen'
 USER_EMAIL = 'pbergen@salesforce.com'

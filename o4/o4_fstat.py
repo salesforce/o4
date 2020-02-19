@@ -481,7 +481,7 @@ def fstat_from_perforce(depot_path, upper, lower=None):
 
     def fstatify(r, head=len(depot_path.replace('...', ''))):
         try:
-            if r[b'code'] == b'skip':
+            if r[b'code'] == b'mute':
                 return ('0', '', '0', '0', '')
             t = r[b'headType'].decode('utf8')
             c = r.get(b'digest', b'').decode('utf8')

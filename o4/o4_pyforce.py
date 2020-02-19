@@ -86,7 +86,9 @@ class Pyforce(object):
                     return self.transform(res)
                 if data:
                     # For messages that aren't errors at all, change their code and return
-                    if (b'file(s) up-to-date' in data or b'no file(s) to reconcile' in data or
+                    if (b'file(s) up-to-date' in data or False):
+                        res[b'code'] = b'info'
+                    elif (b'no file(s) to reconcile' in data or
                             b'no file(s) to resolve' in data or b'no file(s) to unshelve' in data or
                             b'file(s) not on client' in data or
                             b'No shelved files in changelist to delete' in data):

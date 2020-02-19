@@ -805,14 +805,14 @@ def o4_sync(changelist,
         try:
             check_call([
                 '/bin/bash', '-c', f'set -o pipefail;{timecmd}{cmd}' +
-                '|| (echo PIPESTATUS ${PIPESTATUS[@]} >.o4-pipefails; false)'
+                '|| (echo PIPESTATUS ${PIPESTATUS[@]} >.o4/pipefails; false)'
             ])
             print()
         except CalledProcessError:
             cwd = os.getcwd()
-            with open('.o4-pipefails') as f:
+            with open('.o4/pipefails') as f:
                 fails = f.readline().rstrip().split()[1:]
-                os.remove('.o4-pipefails')
+                os.remove('.o4/pipefails')
             cmd = cmd.split('|')
             msg = [f"{CLR}*** ERROR: Pipeline failed in {cwd}:"]
             failures = []
@@ -877,12 +877,12 @@ def o4_sync(changelist,
     verbose = ' -v' if verbose else ''
     force = ' -f' if force else ''
     fstat = f"{o4bin} fstat{force} ...@{changelist}"
-    gatling_low = gat(f"gatling{verbose} -n 4")
+    gatling_low = gat(f"gatling{verbose} -m {256*1024} -n 4")
     if previous_cl and not force:
         fstat += f" --changed {previous_cl}"
         gatling_low = ''
     manifold_big = man(f"manifold{verbose} -m {10*1024*1024}")
-    gatling_verbose = gat(f"gatling{verbose}")
+    gatling_verbose = gat(f"gatling{verbose} -m {256*1024}")
     manifold_verbose = man(f"manifold{verbose}")
     progress = f"| {o4bin} progress" if sys.stdin.isatty() and progress_enabled() else ''
     pyforce = 'pyforce'  #pyforce = 'pyforce' + (' --debug --' if os.environ.get('DEBUG', '') else '')
@@ -1180,8 +1180,7 @@ def o4_clean(changelist, quick=False, resume=False, discard=False):
         if not os.path.exists(source):
             sys.exit(f'*** ERROR: Cannot resume cleaning; {source} does not exist.')
     else:
-        os.makedirs(f'{source}/.o4', exist_ok=True)
-        move_except(f'{target}/.o4', f'{source}/.o4', but_not=('cleaning', 'cleaned'))
+        os.makedirs(f'{source}', exist_ok=True)
         move_except(target, source, but_not=['.o4'])
 
         dep = _depot_path().replace('/...', '')

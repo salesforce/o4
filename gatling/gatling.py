@@ -208,9 +208,6 @@ def distribute(cmd, max_bytes, max_procs, chunk_size, round_robin, verbose):
                         done = [d for d in p_filled if d.poll() is not None]
                         if done and verbose:
                             print(f"# {my_name} CLOSED {len(done)} PROCESSES", file=sys.stderr)
-#                        else:
-#                            print("SKIPPING NOT DONE", file=sys.stderr)
-#                            break
                         for d in done:
                             if verbose and p._t0 != t1:
                                 print(f"# {my_name} CLOSED PROCESS INPUT: {p._n:,} TIME:",
@@ -221,7 +218,6 @@ def distribute(cmd, max_bytes, max_procs, chunk_size, round_robin, verbose):
                             res.append(d.returncode)
                         if not done:
                             sleep(0.5)
-#                    print("AFTER LOOP", file=sys.stderr)
                 else:
                     p_open.append(p)
             else:

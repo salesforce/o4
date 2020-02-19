@@ -54,10 +54,6 @@ def progress_iter(it, path, desc, delay=0.5, delta=500):
     Use this to wrap an iterator you would like to present progress
     for.
     """
-    if not progress_enabled():
-        for line in it:
-            yield line
-        return
     with open(swap_filename(path), 'wt') as pout:
         try:
             for n, r in enumerate(it):
@@ -70,6 +66,14 @@ def progress_iter(it, path, desc, delay=0.5, delta=500):
             pout.seek(0)
             pout.truncate()
             print("-", file=pout)
+
+
+def progress_off_iter(it, path, desc, delay=0.5, delta=500):
+    return it
+
+
+if not progress_enabled():
+    progress_iter = progress_off_iter
 
 
 def progress_show(path, delay=0.45):

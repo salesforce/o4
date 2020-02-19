@@ -2,9 +2,9 @@
 """
 Usage:
   o4 sync <path> [-v] [-q] [-f] [+o] [-S <seed>] [-s <seed> [--move]] [-m <ignored>]
-  o4 status <path>
+  o4 status <path> [-f] [-q]
   o4 clean <path> [-v] [-q] [--resume] [--discard]
-  o4 fstat <paths>... [-q] [-f] [--changed <previous>] [--drop <fname>] [--keep <fname>] [--report <report>] [--add <fname>]...
+  o4 fstat <paths>... [-v] [-q] [-f] [--changed <previous>] [--drop <fname>] [--keep <fname>] [--report <report>] [--add <fname>]...
   o4 seed-from <dir> [--fstat <fstat>] [--move]
   o4 (drop|keep|keep-any) [-v] [--case|--not-case] [--open|--not-open] [--existence|--not-existence] [--checksum|--not-checksum] [--deletes|--not-deletes] [--deleted <fname>]...
   o4 drop --havelist
@@ -16,7 +16,10 @@ Usage:
 
 Option:
   sync          Sync/verify <path>.
-  status        Similar to git status, verifies the files in <path> against fstat records.
+  status        Similar to git status, verifies the files in <path> against fstat records. By
+                default only files that are supposed to exist are checked, to check all files,
+                provide -f. For a faster check from 80% of current changelist,
+                add -q (recommended).
   clean         Clean <path>.
   <path>        Specify perforce style path, optionally specify "@changelist", if not given, head
                 will be determined. If path is a directory, "/..." is implied.
@@ -226,7 +229,8 @@ def o4_seed_from(seed_dir, seed_fstat, op):
             print(line, end='')  # line already ends with '\n'
 
 
-def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=False, add=None):
+def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=False, add=None,
+             verbose=False):
     """
     changelist: Target changelist
     previous_cl: Previous_cl if known (otherwise 0)
@@ -236,6 +240,8 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
           to limit output to
     force: output all fstat lines even though previous_cl is set. This only affects
            fstat when previous_cl is more recent than changelist (reverse sync).
+    add: Create dummy entries from this list,
+    verbose: Output stats on stderr after all fstat is listed.
 
     Missing fstat files for changelist and previous_cl are generated automatically.
 
@@ -295,7 +301,8 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
            keep=keep,
            quiet=quiet,
            force=force,
-           add=add)
+           add=add,
+           verbose=verbose)
 
     if previous_cl:
         previous_cl = int(previous_cl)
@@ -366,7 +373,13 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
     # Can't break out of fstat_iter without risking that the local
     # cache is not created, causing fstat_from_perforce to be called
     # twice, so we use an iterator that we can drain.
+    n_fstats = 0
+    n_deleted = 0
     for line in fstats:
+        if verbose:
+            n_fstats += 1
+            if line.endswith(','):
+                n_deleted += 1
         if keep is not None or drop is not None:
             path, line = fstat_path(line)
             if not path:
@@ -391,6 +404,8 @@ def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=F
                     break
         print(line)
     actual_cl, fname = get_fstat_cache(changelist)
+    if verbose:
+        print({'files': n_fstats, 'deleted': n_deleted}, file=sys.stderr)
     return actual_cl
 
 
@@ -1034,9 +1049,8 @@ def o4_sync(changelist,
               f' full verification.')
 
 
-def o4_status(changelist, depot):
+def o4_status(changelist, depot, check_all, quick):
     from subprocess import run, PIPE
-    from pprint import pprint
 
     o4bin = find_o4bin()
     manibin = os.path.join(os.path.dirname(o4bin), 'manifold')
@@ -1057,6 +1071,12 @@ def o4_status(changelist, depot):
         cur = None
     if cur is None:
         cur, fname = get_fstat_cache(changelist)
+    o4_log('fstat',
+           depot,
+           changelist=changelist,
+           cur=cur,
+           check_all=check_all,
+           quick=quick)
     if cur is None:
         print("*** ERROR: Current changelist could not be determined.")
         return
@@ -1064,15 +1084,23 @@ def o4_status(changelist, depot):
     print(f"Current changelist: {cur:,d}")
     print(f"  - HEAD is {changelist:,d} (+{changelist-cur:,d})")
 
-    keep_case = f'| {o4bin} keep --case ' if sys.platform == 'darwin' else ''
-    cmd = f"{o4bin} fstat .@{cur}| {manibin} o4 drop --checksum{keep_case}"
+    os.environ['O4_PROGRESS'] = 'false'
+    keep_case = f'| {o4bin} keep --case' if sys.platform == 'darwin' else ''
+    drop_deleted = f"| grep -v ',$' " if not check_all else ''
+    changed = f" --changed {cur*4//5}" if quick else ''
+    cmd = f"{o4bin} fstat -v .@{cur}{changed}{drop_deleted}| {manibin} o4 drop --checksum{keep_case}"
     print(f"Checksumming ({cmd}).")
+    if not check_all:
+        print("Skipping deleted files.")
+    if quick:
+        print(f"Skipping changes before changelist {cur*4//5:,d}.")
     print("Please be patient...")
-    res = run(cmd, stdout=PIPE, shell=True, universal_newlines=True)
+    res = run(cmd, stdout=PIPE, stderr=PIPE, shell=True, universal_newlines=True)
     crcs = {
         f[F_PATH]: f
         for f in sorted((fstat_split(f) for f in res.stdout.splitlines()), key=lambda x: x[F_PATH])
     }
+    file_stats = eval([line for line in res.stderr.splitlines() if line.startswith('{')][0], {}, {})
 
     has_open = {f['depotFile'].replace(depot, ''): f for f in Pyforce('opened', '...')}
 
@@ -1097,6 +1125,7 @@ def o4_status(changelist, depot):
     }
     missing = {f for f in crcs.keys() if f not in renamed and not os.path.exists(f)}
     all_fnames = set(list(has_open.keys()) + list(crcs.keys()))
+    print(f"Files checked: {file_stats['files'] - (0 if check_all else file_stats['deleted']):,d}")
 
     if all_fnames:
         print("\nFiles with local modifications:")
@@ -1132,8 +1161,8 @@ def o4_status(changelist, depot):
     if len(has_open) == len(all_fnames):
         s = 's' if len(has_open) > 1 else ''
         print("")
-        print(f"*** INFO: Besides the {len(has_open)} file{s} opened for edit,")
-        print(f"          all files passed the checksum test.")
+        print(f"*** INFO: Besides the {len(has_open)} file{s} opened for edit, "
+              f"all files passed the checksum test.")
 
     return True
 
@@ -1534,11 +1563,11 @@ def main():
     try:
         if opts['fstat']:
             actual_cl = o4_fstat(opts['@'], opts['--changed'], opts['--drop'], opts['--keep'],
-                                 opts['-q'], opts['-f'], opts['--add'])
+                                 opts['-q'], opts['-f'], opts['--add'], opts['-v'])
             if opts['--report']:
                 print(opts['--report'].format(**locals()))
         if opts['status']:
-            o4_status(opts['@'], opts['<path>'])
+            o4_status(opts['@'], opts['<path>'], opts['-f'], opts['-q'])
         if opts['sync']:
             if opts['-m']:
                 print("*** WARNING: sync -m is deprecated.")

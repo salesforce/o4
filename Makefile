@@ -73,12 +73,14 @@ uninstall: $(EXES)
 	rm -f $(foreach exe, $^, /usr/local/bin/$(notdir $(exe)))
 
 aws:
-	for f in o4/o4_pyforce.py build/o4 build/manifold build/gatling; do \
-	aws s3 cp $$f s3://sfdc-ansible/o4/$$(basename $$f); done
+	@echo "Uploading artifacts to PRODUCTION."
+	@$(foreach path, o4/o4_pyforce.py build/o4 build/manifold build/gatling,\
+	aws s3 cp $(path) s3://sfdc-ansible/o4/$(notdir $(path));)
 
 aws-staging:
-	for f in o4/o4_pyforce.py build/o4 build/manifold build/gatling; do \
-	aws s3 cp $$f s3://sfdc-ansible/o4-staging/$$(basename $$f); done
+	@echo "Uploading artifacts to STAGING."
+	@$(foreach path, o4/o4_pyforce.py build/o4 build/manifold build/gatling,\
+	aws s3 cp $(path) s3://sfdc-ansible/o4-staging/$(notdir $(path));)
 
 lint: $(LINTS)
 

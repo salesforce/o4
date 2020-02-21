@@ -989,13 +989,15 @@ def o4_sync(changelist,
 
     quiet = '-q' if seed else ''
     retry = (f"| {manifold_big} {o4bin} drop --checksum"
+             f"{keep_case}"
              f"| {gatling_verbose} {o4bin} {quiet} {pyforce} sync -f"
              f"| {manifold_big} {o4bin} drop --checksum"
              f"| {gatling_verbose} {o4bin} {quiet} {pyforce} sync -f"
              f"| {manifold_big} {o4bin} drop --checksum"
              f"| {o4bin} fail")
 
-    syncit = f"| {gatling_verbose} {o4bin} {quiet} {pyforce} sync{force}"
+    syncit = (f"{keep_case}"
+              f"| {gatling_verbose} {o4bin} {quiet} {pyforce} sync{force}")
     if seed:
         syncit = f"| {manifold_verbose} {o4bin} seed-from {seed}"
         _, seed_fstat = get_fstat_cache(10_000_000_000, seed + '/.o4')
@@ -1003,9 +1005,10 @@ def o4_sync(changelist,
             syncit += f" --fstat {os.path.abspath(seed_fstat)}"
         if seed_move:
             syncit += " --move"
+        syncit += keep_case
+        retry = retry.replace(keep_case, '')
 
     cmd = (f"{fstat} | {o4bin} drop --not-deletes --existence"
-           f"{keep_case}"
            f"{progress}"
            f"{syncit}"
            f"{retry}")
@@ -1020,7 +1023,6 @@ def o4_sync(changelist,
 
     cmd = (f"{fstat} "
            f"| {o4bin} drop --deletes"
-           f"{keep_case}"
            f"{progress}"
            f"| {manifold_big} {o4bin} drop --checksum"
            f"{syncit}"

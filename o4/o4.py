@@ -902,6 +902,9 @@ def o4_sync(changelist,
     progress = f"| {o4bin} progress" if sys.stdin.isatty() and progress_enabled() else ''
     pyforce = 'pyforce'  #pyforce = 'pyforce' + (' --debug --' if os.environ.get('DEBUG', '') else '')
     keep_case = f'| {o4bin} keep --case' if sys.platform == 'darwin' else ''
+    checksum_with_case = (f"| {manifold_big} {o4bin} drop --checksum"
+                          f"{keep_case}")
+
     if previous_cl == changelist and not force:
         print(f'*** INFO: {os.getcwd()} is already synced to {changelist}, use -f to force a'
               f' full verification.')
@@ -988,16 +991,15 @@ def o4_sync(changelist,
         print(f"{CLR}*** INFO: There are no opened files.")
 
     quiet = '-q' if seed else ''
-    retry = (f"| {manifold_big} {o4bin} drop --checksum"
-             f"{keep_case}"
-             f"| {gatling_verbose} {o4bin} {quiet} {pyforce} sync -f"
+    retry = (f"| {gatling_verbose} {o4bin} {quiet} {pyforce} sync -f"
              f"| {manifold_big} {o4bin} drop --checksum"
              f"| {gatling_verbose} {o4bin} {quiet} {pyforce} sync -f"
              f"| {manifold_big} {o4bin} drop --checksum"
              f"| {o4bin} fail")
 
-    syncit = (f"{keep_case}"
-              f"| {gatling_verbose} {o4bin} {quiet} {pyforce} sync{force}")
+    syncit = (f"{checksum_with_case}"
+              f"| {gatling_verbose} {o4bin} {quiet} {pyforce} sync{force}"
+              f"| {manifold_big} {o4bin} drop --checksum")
     if seed:
         syncit = f"| {manifold_verbose} {o4bin} seed-from {seed}"
         _, seed_fstat = get_fstat_cache(10_000_000_000, seed + '/.o4')
@@ -1006,7 +1008,6 @@ def o4_sync(changelist,
         if seed_move:
             syncit += " --move"
         syncit += keep_case
-        retry = retry.replace(keep_case, '')
 
     cmd = (f"{fstat} | {o4bin} drop --not-deletes --existence"
            f"{progress}"
@@ -1024,7 +1025,6 @@ def o4_sync(changelist,
     cmd = (f"{fstat} "
            f"| {o4bin} drop --deletes"
            f"{progress}"
-           f"| {manifold_big} {o4bin} drop --checksum"
            f"{syncit}"
            f"{retry}")
     run_cmd(cmd)

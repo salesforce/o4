@@ -25,7 +25,7 @@ EXES:=build/o4 build/gatling build/manifold
 
 SHELL:=/bin/bash
 
-.PHONY: clean lint install uninstall
+.PHONY: clean lint install uninstall aws aws-staging
 
 all: lint $(EXES)
 
@@ -71,6 +71,14 @@ install: $(EXES)
 
 uninstall: $(EXES)
 	rm -f $(foreach exe, $^, /usr/local/bin/$(notdir $(exe)))
+
+aws:
+	for f in o4/o4_pyforce.py build/o4 build/manifold build/gatling; do \
+	aws s3 cp $$f s3://sfdc-ansible/o4/$$(basename $$f); done
+
+aws-staging:
+	for f in o4/o4_pyforce.py build/o4 build/manifold build/gatling; do \
+	aws s3 cp $$f s3://sfdc-ansible/o4-staging/$$(basename $$f); done
 
 lint: $(LINTS)
 

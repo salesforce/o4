@@ -236,15 +236,19 @@ def distribute(cmd, max_bytes, max_procs, chunk_size, round_robin, verbose):
             d.kill()
         raise
 
-# This method, for unknown reason, leads to busy wait and an explosion in CPU consumption
-#    while p_filled:
-#        res.append(p_filled.pop(0).wait())
-    while p_filled:
-        sleep(0.5)
-        tmp = [p.poll() for p in p_filled]
-        for i, rt in reversed(list(enumerate(tmp))):
-            if rt is not None:
-                res.append(p_filled.pop(i).wait())
+    if sys.platform == 'linux':
+	# This method, for unknown reasons, leads to busy wait and an explosion in 
+        # CPU consumption on the mac
+        while p_filled:
+            res.append(p_filled.pop(0).wait())
+    else:
+        # This method, for unkown reasons, works on the mac and hangs on linux
+        while p_filled:
+            sleep(0.5)
+            tmp = [p.poll() for p in p_filled]
+            for i, rt in reversed(list(enumerate(tmp))):
+                if rt is not None:
+			    res.append(p_filled.pop(i).wait())
 
     if sel_t:
         not_done.pop()

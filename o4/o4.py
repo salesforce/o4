@@ -1052,6 +1052,11 @@ def o4_sync(changelist,
 
 
 def o4_status(changelist, depot, check_all, quick):
+    '''
+    Checks for files that don't match Perforce.
+    Returns the number of files that are bad in any way,
+    or 1 if it can't be determined.
+    '''
     from subprocess import run, PIPE
 
     o4bin = find_o4bin()
@@ -1062,7 +1067,7 @@ def o4_status(changelist, depot, check_all, quick):
     print(f"*** INFO: o4 status {here}")
     if not os.path.isdir('.o4'):
         print("Never synced with o4.")
-        return
+        return 1
     try:
         cur = int(open('.o4/changelist').read().strip())
     except ValueError:
@@ -1081,7 +1086,7 @@ def o4_status(changelist, depot, check_all, quick):
            quick=quick)
     if cur is None:
         print("*** ERROR: Current changelist could not be determined.")
-        return
+        return 1
 
     print(f"Current changelist: {cur:,d}")
     print(f"  - HEAD is {changelist:,d} (+{changelist-cur:,d})")
@@ -1135,7 +1140,7 @@ def o4_status(changelist, depot, check_all, quick):
         print(" (!=Checksum fail A=Added D=Deleted M=Modified O=Open R=Renamed)\n")
     else:
         print("*** INFO: All files passed the checksum test and no files are open for edit.")
-        return True
+        return 0
 
     for f in sorted(all_fnames):
         ho = has_open.get(f, {})
@@ -1166,8 +1171,8 @@ def o4_status(changelist, depot, check_all, quick):
         print("")
         print(f"*** INFO: Besides the {len(has_open)} file{s} opened for edit, "
               f"all files passed the checksum test.")
-
-    return True
+        return 0
+    return len(all_fnames)
 
 
 def get_clean_cl(opts):
@@ -1570,7 +1575,7 @@ def main():
             if opts['--report']:
                 print(opts['--report'].format(**locals()))
         if opts['status']:
-            o4_status(opts['@'], opts['<path>'], opts['-f'], opts['-q'])
+            ec = o4_status(opts['@'], opts['<path>'], opts['-f'], opts['-q'])
         if opts['sync']:
             if opts['-m']:
                 print("*** WARNING: sync -m is deprecated.")

@@ -1054,8 +1054,8 @@ def o4_sync(changelist,
 def o4_status(changelist, depot, check_all, quick):
     '''
     Checks for files that don't match Perforce.
-    Returns the number of files that are bad in any way,
-    or 1 if it can't be determined.
+    Returns 0 if there are no bad files, 1 if there are
+    any, and 2 if it can't be determined. (E.g., not synced)
     '''
     from subprocess import run, PIPE
 
@@ -1067,7 +1067,7 @@ def o4_status(changelist, depot, check_all, quick):
     print(f"*** INFO: o4 status {here}")
     if not os.path.isdir('.o4'):
         print("Never synced with o4.")
-        return 1
+        return 2
     try:
         cur = int(open('.o4/changelist').read().strip())
     except ValueError:
@@ -1086,7 +1086,7 @@ def o4_status(changelist, depot, check_all, quick):
            quick=quick)
     if cur is None:
         print("*** ERROR: Current changelist could not be determined.")
-        return 1
+        return 2
 
     print(f"Current changelist: {cur:,d}")
     print(f"  - HEAD is {changelist:,d} (+{changelist-cur:,d})")
@@ -1172,7 +1172,7 @@ def o4_status(changelist, depot, check_all, quick):
         print(f"*** INFO: Besides the {len(has_open)} file{s} opened for edit, "
               f"all files passed the checksum test.")
         return 0
-    return len(all_fnames)
+    return len(naughty) != 0
 
 
 def get_clean_cl(opts):

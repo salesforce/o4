@@ -1225,7 +1225,8 @@ def o4_clean(changelist, quick=False, resume=False, discard=False):
         for of in p4open:
             if os.path.dirname(of):
                 os.makedirs(os.path.dirname(of), exist_ok=True)
-            shutil.move(os.path.join(source, of), of)
+            if os.path.exists(os.path.join(source, of)):
+                shutil.move(os.path.join(source, of), of)
 
     os.chdir(target)
     o4bin = find_o4bin()

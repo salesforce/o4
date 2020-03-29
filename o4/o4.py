@@ -226,6 +226,7 @@ def o4_seed_from(seed_dir, seed_fstat, op):
                     checksum = Pyforce.checksum(f[F_PATH], f[F_FILE_SIZE])
                 if f[F_FILE_SIZE].endswith('symlink') or checksum == f[F_CHECKSUM]:
                     update_target(f[F_PATH], dest, fsop)
+                    continue
             print(line, end='')  # line already ends with '\n'
 
 

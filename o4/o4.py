@@ -21,10 +21,11 @@ Option:
                 provide -f. For a faster check from 80% of current changelist,
                 add -q (recommended).
   clean         Clean <path>.
-  <path>        Specify perforce style-path, optionally specify "@changelist";
-                if not given, head will be determined.
-                This path must always be a directory, not a file.
+  <path>        Specify perforce-style path (either a depot path, or a local
+                path).  This path must always be a directory, not a file.
                 A "/..." suffix is implied so can be omitted.
+                Optionally append "@<changelist>"; otherwise, head will be
+                determined.
   -s <seed>     Seed sync with files from a path.
   --resume      Automatically resumes a clean if <path>.o4-bak exists.
   --discard     Delete the files that should not exist (i.e., don't save them

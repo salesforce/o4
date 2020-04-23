@@ -21,12 +21,11 @@ Option:
                 provide -f. For a faster check from 80% of current changelist,
                 add -q (recommended).
   clean         Clean <path>.
-  <path>        Specify perforce style path, optionally specify "@changelist";
-                if not given, head will be determined. If path is a directory,
-                "/..." is implied.
+  <path>        Specify perforce style-path, optionally specify "@changelist";
+                if not given, head will be determined.
                 This path must always be a directory, not a file.
+                A "/..." suffix is implied so can be omitted.
   -s <seed>     Seed sync with files from a path.
-  -S <seed>     Old o4 compatibility flag. Do not use, deprecated.
   --resume      Automatically resumes a clean if <path>.o4-bak exists.
   --discard     Delete the files that should not exist (i.e., don't save them
                 in a separate location). DEPRECATED
@@ -1540,9 +1539,6 @@ def main():
     check_higher_sync(target)
     o4dir = os.path.join(target, '.o4')
     opts['<path>'] = opts['<path>'] + '/...'
-    if opts['-S'] and not opts['-s']:
-        # TODO: Delete when old o4 is gone
-        opts['-s'] = opts['-S']
     if opts['-s']:
         opts['-s'] = os.path.abspath(opts['-s'])
     os.makedirs(target, exist_ok=True)

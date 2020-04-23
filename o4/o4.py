@@ -21,16 +21,17 @@ Option:
                 provide -f. For a faster check from 80% of current changelist,
                 add -q (recommended).
   clean         Clean <path>.
-  <path>        Specify perforce style path, optionally specify "@changelist", if not given, head
-                will be determined. If path is a directory, "/..." is implied.
-                This path must always be a directory, not a file.
+  <path>        Specify perforce-style path (either a depot path, or a local
+                path).  This path must always be a directory, not a file.
+                A "/..." suffix is implied so can be omitted.
+                Optionally append "@<changelist>"; otherwise, head will be
+                determined.
   -s <seed>     Seed sync with files from a path.
-  -S <seed>     Old o4 compatibility flag. Do not use, deprecated.
   --resume      Automatically resumes a clean if <path>.o4-bak exists.
-  --discard     Delete the files that should not exist (i.e., don't save them in a separate
-                location).
-  fstat         Stream fstat lines for a [depot] path. Paths can contain changelist in
-                the '<path>@<changelist>' notation.
+  --discard     Delete the files that should not exist (i.e., don't save them
+                in a separate location). DEPRECATED
+  fstat         Stream fstat lines for a [depot] path. Paths can contain
+                changelist in the '<path>@<changelist>' notation.
   --changed <previous>  Only output fstat for changes in (<previous>,<changelist>]
   --drop <fname>  Remove fstat with path listed in <fname>.
   --keep <fname>  Only keep fstat with path listed in <fname>.
@@ -1251,6 +1252,7 @@ def o4_clean(changelist, quick=False, resume=False, discard=False):
     else:
         assert source.endswith('cleaning')
         shutil.rmtree(source)
+        print('*** INFO: The discard option is deprecated', file=sys.stderr)
 
 
 def rm_empty_dirs(root):
@@ -1538,9 +1540,6 @@ def main():
     check_higher_sync(target)
     o4dir = os.path.join(target, '.o4')
     opts['<path>'] = opts['<path>'] + '/...'
-    if opts['-S'] and not opts['-s']:
-        # TODO: Delete when old o4 is gone
-        opts['-s'] = opts['-S']
     if opts['-s']:
         opts['-s'] = os.path.abspath(opts['-s'])
     os.makedirs(target, exist_ok=True)

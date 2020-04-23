@@ -227,6 +227,7 @@ def o4_seed_from(seed_dir, seed_fstat, op):
                     checksum = Pyforce.checksum(f[F_PATH], f[F_FILE_SIZE])
                 if f[F_FILE_SIZE].endswith('symlink') or checksum == f[F_CHECKSUM]:
                     update_target(f[F_PATH], dest, fsop)
+                    continue
             print(line, end='')  # line already ends with '\n'
 
 
@@ -1226,7 +1227,8 @@ def o4_clean(changelist, quick=False, resume=False, discard=False):
         for of in p4open:
             if os.path.dirname(of):
                 os.makedirs(os.path.dirname(of), exist_ok=True)
-            shutil.move(os.path.join(source, of), of)
+            if os.path.exists(os.path.join(source, of)):
+                shutil.move(os.path.join(source, of), of)
 
     os.chdir(target)
     o4bin = find_o4bin()

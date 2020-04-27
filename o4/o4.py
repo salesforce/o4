@@ -1199,8 +1199,21 @@ def get_clean_cl(opts):
     return int(cl)
 
 
-def o4_move(quiet, copymode, fromdir, todir):
-    pass
+def o4_move(fromdir, todir, *, quiet=False, copy=False):
+    if copy:
+        def move(path, f, t):
+            print(f'cp {f}/{path} {t}/{path}')
+    else:
+        def move(path, f, t):
+            print(f'mv {f}/{path} {t}/{path}')
+
+    for line in fstat_flow():
+        f = fstat_split(line)
+        if not f:
+            continue
+        move(f[F_PATH], fromdir, todir)
+        if not quiet:
+            print(line, end='')
 
 
 def o4_clean(changelist, quick=False, resume=False, discard=False):
@@ -1531,7 +1544,7 @@ def main():
         sys.exit(0)
 
     if opts['move']:
-        o4_move(opts['-q'], opts['--copy'], opts['<from>'], opts['<to>'])
+        o4_move(opts['<from>'], opts['<to>'], quiet=opts['-q'], copy=opts['--copy'])
         sys.exit(0)
 
     if opts['fstat'] and opts['<paths>']:

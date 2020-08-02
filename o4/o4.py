@@ -1080,7 +1080,7 @@ def o4_status(changelist, depot, check_all, quick):
            cur=cur,
            check_all=check_all,
            quick=quick)
-    if cur is None:
+    if not cur:
         print("*** ERROR: Current changelist could not be determined.")
         return
 

@@ -192,7 +192,7 @@ class Pyforce(object):
                     for chunk in iter(lambda: f.read(1024 * 1024), b''):
                         hash_md5.update(chunk)
             return hash_md5.hexdigest().upper()
-        except FileNotFoundError:
+        except (FileNotFoundError, IsADirectoryError):
             return None
 
 

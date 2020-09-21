@@ -220,17 +220,26 @@ def o4_seed_from(seed_dir, seed_fstat, op):
                             os.unlink(dest)
                         else:
                             raise
+                if f[F_FILE_SIZE].endswith('symlink'):
+                    update_target(f[F_PATH], dest, fsop)
+                    continue
                 if seed_fstat:
                     checksum = seed_checksum.get(f[F_PATH])
                 else:
                     checksum = Pyforce.checksum(f[F_PATH], f[F_FILE_SIZE])
-                if f[F_FILE_SIZE].endswith('symlink') or checksum == f[F_CHECKSUM]:
+                if checksum == f[F_CHECKSUM]:
                     update_target(f[F_PATH], dest, fsop)
                     continue
             print(line, end='')  # line already ends with '\n'
 
 
-def o4_fstat(changelist, previous_cl, drop=None, keep=None, quiet=False, force=False, add=None,
+def o4_fstat(changelist,
+             previous_cl,
+             drop=None,
+             keep=None,
+             quiet=False,
+             force=False,
+             add=None,
              verbose=False):
     """
     changelist: Target changelist
@@ -1074,12 +1083,7 @@ def o4_status(changelist, depot, check_all, quick):
         cur = None
     if cur is None:
         cur, fname = get_fstat_cache(changelist)
-    o4_log('fstat',
-           depot,
-           changelist=changelist,
-           cur=cur,
-           check_all=check_all,
-           quick=quick)
+    o4_log('fstat', depot, changelist=changelist, cur=cur, check_all=check_all, quick=quick)
     if not cur:
         print("*** ERROR: Current changelist could not be determined.")
         return

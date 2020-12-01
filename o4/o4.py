@@ -6,6 +6,7 @@ Usage:
   o4 clean <path> [-v] [-q] [--resume] [--discard]
   o4 fstat <paths>... [-v] [-q] [-f] [--changed <previous>] [--drop <fname>] [--keep <fname>] [--report <report>] [--add <fname>]...
   o4 seed-from <dir> [--fstat <fstat>] [--move]
+  o4 move [-q] [--copy] [<from>] [<to>]
   o4 (drop|keep|keep-any) [-v] [--case|--not-case] [--open|--not-open] [--existence|--not-existence] [--checksum|--not-checksum] [--deletes|--not-deletes] [--deleted <fname>]...
   o4 drop --havelist
   o4 [-q] pyforce [--debug] [--no-rev] [--] <p4args>...
@@ -39,7 +40,10 @@ Option:
   seed-from     Copy files from the seed directory if they match what we want from Perforce.
                 If the named fstat file exists in the seed's .o4, it will be used, otherwise
                 the file will be checksummed. Outputs on stdout files it did not copy.
-  --fstat <fstat>  The path to the the fstat file, if any
+  move          Move (or copy) the input fstat file from the directory root
+                <from> to the directory root <to>. Output the fstat record
+                unless -q is included.
+  --fstat <fstat>  The path to the fstat file, if any
   --move        Move the file from the seed directory rather than copy it
   drop          Forward fstat lines that don't satisfy any of the given filters
   keep          Forward fstat lines that satisfy every one of the given filters
@@ -126,6 +130,22 @@ def find_o4bin():
     return __file__
 
 
+class fstat_flow:
+    def __init__(self, f=sys.stdin, *, preread=False):
+        self.lines = iter(f.read().splitlines(keepends=True) if preread else f)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        for line in self.lines:
+            if line.startswith('#o4pass'):
+                print(line, end='')
+                continue
+            return line
+        raise StopIteration
+
+
 def _depot_path():
     """
     Returns the depot path of CWD. Result is cached in env var
@@ -202,10 +222,7 @@ def o4_seed_from(seed_dir, seed_fstat, op):
         }
     target_dir = os.getcwd()
     with chdir(seed_dir):
-        for line in sys.stdin:
-            if line.startswith('#o4pass'):
-                print(line, end='')
-                continue
+        for line in fstat_flow():
             f = fstat_split(line)
             if not f:
                 continue
@@ -425,11 +442,7 @@ def o4_drop_have(verbose=False):
     pre = len(_depot_path().replace('/...', '')) + 1
     have = None
     # We have to wait with pulling the server havelist until we have the input in its entirety
-    lines = sys.stdin.read().splitlines()
-    for line in lines:
-        if line.startswith('#o4pass'):
-            print(line)
-            continue
+    for line in fstat_flow(preread=True):
         if not have:
             if have is not None:
                 print(line)
@@ -556,10 +569,7 @@ def o4_filter(filtertype, filters, verbose):
         sys.exit(f"*** ERROR: Invalid filtertype: {filtertype}")
 
     try:
-        for line in sys.stdin:
-            if line.startswith('#o4pass'):
-                print(line, end='')
-                continue
+        for line in fstat_flow():
             row = fstat_split(line)
             if row:
                 if combo_func(row):
@@ -588,10 +598,7 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
 
     tmpf = NamedTemporaryFile(dir='.o4')
     fstats = []
-    for line in sys.stdin.read().splitlines():
-        if line.startswith('#o4pass'):
-            print(line)
-            continue
+    for line in fstat_flow(preread=True):
         f = fstat_split(line)
         if f and caseful_accurate(f[F_PATH]):
             fstats.append(f)
@@ -964,7 +971,7 @@ def o4_sync(changelist,
             print(open_file_name, file=openf)
             if p['action'] == 'move/add':
                 move_adds.append(shquote(open_file_name))
-            if p['action'] == 'move/delete':
+            if p['action'] in ('move/delete', 'delete'):
                 move_deletes.append(shquote(open_file_name))
             if i < 10:
                 print(f'*** INFO: --keeping {open_file_name}')
@@ -979,7 +986,7 @@ def o4_sync(changelist,
         move_delete = ''
         if move_deletes:
             move_delete = ' --deleted '.join([''] + move_deletes)
-            move_delete = f"| {o4bin} drop {move_delete}"
+            move_delete = f"| {o4bin} drop {move_delete.strip()}"
 
         cmd = (f"{fstat} --keep {openf.name}{move_add}"
                f"| {gatling_verbose} -- {o4bin} {pyforce} sync"
@@ -1194,6 +1201,23 @@ def get_clean_cl(opts):
     if opts['-v']:
         err_print(f'*** INFO: Cleaning to changelist {cl}')
     return int(cl)
+
+
+def o4_move(fromdir, todir, *, quiet=False, copy=False):
+    if copy:
+        def move(path, f, t):
+            print(f'cp {f}/{path} {t}/{path}')
+    else:
+        def move(path, f, t):
+            print(f'mv {f}/{path} {t}/{path}')
+
+    for line in fstat_flow():
+        f = fstat_split(line)
+        if not f:
+            continue
+        move(f[F_PATH], fromdir, todir)
+        if not quiet:
+            print(line, end='')
 
 
 def o4_clean(changelist, quick=False, resume=False, discard=False):
@@ -1521,6 +1545,10 @@ def main():
 
     if opts['head']:
         o4_head(map(depot_abs_path, opts['<paths>']))
+        sys.exit(0)
+
+    if opts['move']:
+        o4_move(opts['<from>'], opts['<to>'], quiet=opts['-q'], copy=opts['--copy'])
         sys.exit(0)
 
     if opts['fstat'] and opts['<paths>']:

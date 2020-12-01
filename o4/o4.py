@@ -85,14 +85,14 @@ Note: Although all these commands are available to use, the common users is expe
 import os
 import sys
 import time
-import functools
+from functools import partial
 
 from subprocess import check_call, check_output, CalledProcessError, DEVNULL
 from signal import SIGINT
 from errno import EPERM
 import shutil
 
-err_print = functools.partial(print, file=sys.stderr)
+err_print = partial(print, file=sys.stderr)
 
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
@@ -193,7 +193,7 @@ def o4_seed_from(seed_dir, seed_fstat, op):
         except IOError as e:
             print(f'# ERROR MOVING {src}: {e!r}')
 
-    fsop = shutil.move if op == 'move' else shutil.copy2
+    fsop = shutil.move if op == 'move' else partial(shutil.copy2, follow_symlinks=False)
 
     seed_checksum = None
     if seed_fstat:
@@ -462,8 +462,6 @@ def o4_drop_have(verbose=False):
 
 
 def o4_filter(filtertype, filters, verbose):
-    from functools import partial
-
     # Each function implements a filter. It is called with an Fstat tuple.
     # If it "likes" the row (e.g., "checksum" likes the row if the checksum
     # matches the local file's checksum), it returns the row; otherwise it
@@ -1012,9 +1010,10 @@ def o4_sync(changelist,
               f"| {manifold_big} {o4bin} drop --checksum")
     if seed:
         syncit = f"| {manifold_verbose} {o4bin} seed-from {seed}"
-        _, seed_fstat = get_fstat_cache(10_000_000_000, seed + '/.o4')
-        if seed_fstat:
-            syncit += f" --fstat {os.path.abspath(seed_fstat)}"
+        if not list(Pyforce('opened', f'{seed}/...')):
+            _, seed_fstat = get_fstat_cache(10_000_000_000, seed + '/.o4')
+            if seed_fstat:
+                syncit += f" --fstat {os.path.abspath(seed_fstat)}"
         if seed_move:
             syncit += " --move"
         syncit += keep_case

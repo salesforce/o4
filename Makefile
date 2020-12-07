@@ -72,7 +72,7 @@ install: $(EXES)
 uninstall: $(EXES)
 	rm -f $(foreach exe, $^, /usr/local/bin/$(notdir $(exe)))
 
-aws:
+aws: $(EXES)
 	@echo "Uploading artifacts to PRODUCTION."
 	@$(foreach path, o4/o4_pyforce.py build/o4 build/manifold build/gatling,\
 	aws s3 cp $(path) s3://sfdc-ansible/o4/$(notdir $(path));)

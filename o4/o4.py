@@ -1452,6 +1452,7 @@ def main():
     from docopt import docopt
 
     os.environ['PYTHONUNBUFFERED'] = 'true'
+    os.environ['PWD'] = os.getcwd()  # p4 ignores the actual directory and relies on $PWD, and the shell is not reliable
     args = sys.argv[1:]
     add_implicit_args(args)
     if 'pyforce' in args and '--' not in args:

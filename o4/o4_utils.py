@@ -20,9 +20,11 @@ class chdir(object):
             if e.errno not in (EEXIST, EISDIR):
                 raise Exception('Error creating %s: %s' % (self.path, e))
         os.chdir(self.path)
+        os.environ['PWD'] = os.getcwd()
 
     def __exit__(self, etype, evalue, traceback):
         os.chdir(self.original_dir)
+        os.environ['PWD'] = self.original_dir
 
 
 def consume(iterator, n=None):

@@ -1451,8 +1451,15 @@ def add_implicit_args(args):
 def main():
     from docopt import docopt
 
-    os.environ['PYTHONUNBUFFERED'] = 'true'
-    os.environ['PWD'] = os.getcwd()  # p4 ignores the actual directory and relies on $PWD, and the shell is not reliable
+    if 'O4_ROOT_PID' not in os.environ:
+        os.environ['O4_ROOT_PID'] = f'{os.getpid()}'
+        os.environ['PYTHONUNBUFFERED'] = 'true'
+        # p4 ignores the actual directory and relies on $PWD,
+        # and the shell is not reliable
+        os.environ['PWD'] = os.getcwd()
+        if 'CLIENT_ROOT' in os.environ:
+            del os.environ['CLIENT_ROOT']
+
     args = sys.argv[1:]
     add_implicit_args(args)
     if 'pyforce' in args and '--' not in args:

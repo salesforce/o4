@@ -1384,7 +1384,7 @@ def depot_abs_path(path):
         if 'BLT_HOME' in os.environ:
             os.environ['CLIENT_ROOT'] = os.environ['BLT_HOME']
         else:
-            os.environ['CLIENT_ROOT'] = pyforce_info()['clientRoot']
+            os.environ['CLIENT_ROOT'] = pyforce_info()['clientRoot'].rstrip('/')
     path = os.path.abspath(os.path.expanduser(path.replace('...', '').rstrip('/')))
     if not path.startswith('//'):
         path = path.replace(os.environ['CLIENT_ROOT'][1:], '')

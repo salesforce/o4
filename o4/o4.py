@@ -34,7 +34,7 @@ Option:
   --changed <previous>  Only output fstat for changes in (<previous>,<changelist>]
   --drop <fname>     Remove fstat with path listed in <fname>.
   --keep <fname>     Only keep fstat with path listed in <fname>.
-  --add <fname>      Create dummy entry for fname to help with unsbmitted renames.
+  --add <fname>      Create dummy entry for fname to help with unsubmitted renames.
   --report <report>  Print the report string with interpolated values after the fstat operation.
   --fstat <fstat>    The path to the the fstat file, if any
   seed-from     Copy files from the seed directory if they match what we want from Perforce.
@@ -508,7 +508,6 @@ def o4_filter(filtertype, filters, verbose):
         return row[F_PATH] in _have(os.path.dirname(row[F_PATH]))
 
     def f_deletes(row):
-        # FIXME: Remove deletes that are not in the havelist.
         return not row[F_CHECKSUM]
 
     def f_case(row):

@@ -6,8 +6,8 @@ Usage:
   o4 clean <path> [-v] [-q] [--resume] [--discard]
   o4 fstat <paths>... [-v] [-q] [-f] [--changed <previous>] [--drop <fname>] [--keep <fname>] [--report <report>] [--add <fname>]...
   o4 seed-from <dir> [--fstat <fstat>] [--move]
-  o4 (drop|keep|keep-any) [-v] [--case|--not-case] [--open|--not-open] [--existence|--not-existence] [--checksum|--not-checksum] [--deletes|--not-deletes] [--deleted <fname>]...
-  o4 drop --havelist
+  o4 (drop|keep|keep-any) [-v] [--case|--not-case] [--open|--not-open] [--existence|--not-existence] [--checksum|--not-checksum] [--have|--not-have] [--deletes|--not-deletes] [--deleted <fname>]...
+  o4 drop --haverev
   o4 [-q] pyforce [--debug] [--no-rev] [--] <p4args>...
   o4 head <paths>...
   o4 progress
@@ -32,14 +32,14 @@ Option:
   fstat         Stream fstat lines for a [depot] path. Paths can contain changelist in
                 the '<path>@<changelist>' notation.
   --changed <previous>  Only output fstat for changes in (<previous>,<changelist>]
-  --drop <fname>  Remove fstat with path listed in <fname>.
-  --keep <fname>  Only keep fstat with path listed in <fname>.
-  --add <fname>  Create dummy entry for fname to help with unsbmitted renames.
+  --drop <fname>     Remove fstat with path listed in <fname>.
+  --keep <fname>     Only keep fstat with path listed in <fname>.
+  --add <fname>      Create dummy entry for fname to help with unsubmitted renames.
   --report <report>  Print the report string with interpolated values after the fstat operation.
+  --fstat <fstat>    The path to the the fstat file, if any
   seed-from     Copy files from the seed directory if they match what we want from Perforce.
                 If the named fstat file exists in the seed's .o4, it will be used, otherwise
                 the file will be checksummed. Outputs on stdout files it did not copy.
-  --fstat <fstat>  The path to the the fstat file, if any
   --move        Move the file from the seed directory rather than copy it
   drop          Forward fstat lines that don't satisfy any of the given filters
   keep          Forward fstat lines that satisfy every one of the given filters
@@ -54,9 +54,11 @@ Option:
   --not-existence  Opposite of --existence
   --checksum       Filter files that have the correct checksum.
   --not-checksum   Opposite of --checksum
+  --have           Filters file that are in havelist.
+  --not-have       Opposite of --have
   --deletes        Filter fstat lines that are deletes.
   --not-deletes    Opposite of --deletes
-  --havelist       Filter files that are at the revision that the "have" data says they should be.
+  --haverev        Filter files that are at the revision that the "have" data says they should be.
   --deleted <fname>  Drops named files if they are deleted (does not exist).
   -q            Skip second pass for sync, or for pyforce/fstat to be quiet.
   -f            Force all files to be verified and synced.
@@ -467,13 +469,7 @@ def o4_filter(filtertype, filters, verbose):
     # matches the local file's checksum), it returns the row; otherwise it
     # returns None. It also has the option of returning an altered copy.
 
-    def f_deletes(row):
-        return not row[F_CHECKSUM]
-
-    def f_case(row):
-        return caseful_accurate(row[F_PATH])
-
-    def f_open(row, p4open={}):
+    def _opened(p4open={}):
         if not p4open:
             dep = _depot_path().replace('/...', '')
             p4open.update({
@@ -481,25 +477,66 @@ def o4_filter(filtertype, filters, verbose):
                 for p in Pyforce('opened', dep + '/...')
             })
             p4open['populated'] = True
-        return row[F_PATH] in p4open
+        return p4open
+
+    def _have(dirname, p4have={}):
+        if '/...' in p4have or dirname in p4have:
+            # /... is a special flag saying, we know this is all there is
+            return p4have
+        p4have[dirname] = True
+        if dirname:
+            dirname = '/' + dirname + '/...'
+        else:
+            dirname = '/...'
+        dep = _depot_path().replace('/...', '')
+        haves = list(Pyforce('have', dep + dirname))
+        if len(haves) == 1 and haves[0].get('data', '').endswith('file(s) not on client.\n'):
+            dirname = '/...'
+            haves = list(Pyforce('have', dep + dirname))
+        haves = {Pyforce.unescape(p['depotFile'])[len(dep) + 1:]: True
+                 for p in haves}
+        p4have.update(haves)
+        if dirname == '/...':
+            p4have[dirname] = True
+        else:
+            opd = os.path.dirname
+            for fname in haves.keys():
+                p4have[opd(fname)] = True
+        return p4have
+
+    def f_have(row):
+        return row[F_PATH] in _have(os.path.dirname(row[F_PATH]))
+
+    def f_deletes(row):
+        return not row[F_CHECKSUM]
+
+    def f_case(row):
+        return caseful_accurate(row[F_PATH])
+
+    def f_open(row):
+        return row[F_PATH] in _opened()
 
     def f_existence(row):
         """
-        Returns True if the file presence matches the fstat. That is True
-        if fstat says 'delete' and file is missing or True if fstat is
-        not 'delete' and file exists.
-        """
-        return (os.path.lexists(row[F_PATH]) and
-                not os.path.isdir(row[F_PATH])) == bool(row[F_CHECKSUM])
+        Returns True if the file presence matches the fstat or state in
+        opened, with priority to opened.
 
-    def f_existence(row):
+        That is: True if fstat says 'delete' and file is missing or
+        True if fstat is not 'delete' and file exists.
         """
-        Returns True if the file presence matches the fstat. That is True
-        if fstat says 'delete' and file is missing or True if fstat is
-        not 'delete' and file exists.
-        """
+        action = _opened().get(row[F_PATH])
+        should_exist = bool(row[F_CHECKSUM])
+        if action:
+            opened_for_delete = action.endswith('delete')
+            if opened_for_delete:
+                should_exist = False
+            else:
+                opened_for_add = action.endswith('add')
+                if opened_for_add:
+                    should_exist = True
+
         return (os.path.lexists(row[F_PATH]) and
-                not os.path.isdir(row[F_PATH])) == bool(row[F_CHECKSUM])
+                not os.path.isdir(row[F_PATH])) == should_exist
 
     def f_checksum(row):
         if os.path.lexists(row[F_PATH]):
@@ -530,7 +567,7 @@ def o4_filter(filtertype, filters, verbose):
 
     funcs = [inverter(f'f_{fname}(x)', invert) for fname, doit, invert in filters if doit]
     if not funcs:
-        sys.exit(f'*** ERROR: No arguments supplied to filter')
+        sys.exit('*** ERROR: No arguments supplied to filter')
     elif len(funcs) == 1 and filtertype != 'drop' and not funcs[0].startswith('not('):
         if verbose:
             print(f"# Filter {filtertype}:", funcs, file=sys.stderr)
@@ -774,9 +811,9 @@ def o4_sync(changelist,
 
         Ensure the have-list is in sync with the files:
           if seed or force:
-              o4 diff .<CL> | o4 drop --havelist | gatling o4 pyforce sync -k
+              o4 diff .<CL> | o4 drop --haverev | gatling o4 pyforce sync -k
           else:
-              cat tmp_sync | o4 drop --havelist | gatling o4 pyforce sync -k
+              cat tmp_sync | o4 drop --haverev | gatling o4 pyforce sync -k
 
 
         Note: manifold starts processes up front, so it's better suited for work
@@ -969,6 +1006,7 @@ def o4_sync(changelist,
         if len(has_open) > 10:
             print(f'          (and {len(has_open) - 10} more)')
         openf.flush()
+        shutil.copy(openf.name, '.o4/.keepers')
 
         # Resolve before syncing in case there are unresolved files for other reasons
         move_add = ''
@@ -1018,7 +1056,7 @@ def o4_sync(changelist,
             syncit += " --move"
         syncit += keep_case
 
-    cmd = (f"{fstat} | {o4bin} drop --not-deletes --existence"
+    cmd = (f"{fstat} | {o4bin} drop --not-deletes --existence --not-have"
            f"{progress}"
            f"{syncit}"
            f"{retry}")
@@ -1045,11 +1083,11 @@ def o4_sync(changelist,
     if seed or not quick:
         print("*** INFO: Sync is now locally complete, verifying server havelist.")
         cmd = (f"{fstat}"
-               f"| {o4bin} drop --havelist"
+               f"| {o4bin} drop --haverev"
                f"{keep_case}"
                f"{progress}"
                f"| {gatling_low} {o4bin} {pyforce} sync -k"
-               f"| {o4bin} drop --havelist"
+               f"| {o4bin} drop --haverev"
                f"| {o4bin} fail")
         run_cmd(cmd)
     if actual_cl != changelist:
@@ -1488,11 +1526,13 @@ def main():
         filtertype = [f for f in ('drop', 'keep', 'keep-any') if opts[f]]
         if filtertype:
             ran = True
-            if opts['--havelist']:
+            if opts['--haverev']:
                 o4_drop_have()
             else:
                 # This order is the best for performance, think before rearranging.
                 o4_filter(filtertype[0], (
+                    ('have', opts['--have'], False),
+                    ('have', opts['--not-have'], True),
                     ('deletes', opts['--deletes'], False),
                     ('deletes', opts['--not-deletes'], True),
                     ('existence', opts['--existence'], False),

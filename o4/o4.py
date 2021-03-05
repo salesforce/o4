@@ -86,6 +86,7 @@ Note: Although all these commands are available to use, the common users is expe
 
 import os
 import sys
+import glob
 import time
 from functools import partial
 
@@ -921,6 +922,19 @@ def o4_sync(changelist,
             except ValueError:
                 print("{CLR}*** WARNING: {os.getcwd()}/.o4/changelist could not be read",
                       file=sys.stderr)
+    elif force:
+        for f in glob.glob('.o4/*.fstat.gz'):
+            rev, _, _ = os.path.basename(f).partition('.')
+            try:
+                rev = int(rev)
+                if rev > previous_cl:
+                    previous_cl = rev
+            except:
+                continue
+
+    if force and previous_cl > changelist:
+        print("*** WARNING: Reverse sync and force cannot be combined. Force is set to false.")
+        force = False
 
     o4_log('sync',
            changelist=changelist,

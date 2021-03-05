@@ -3,8 +3,8 @@
 
 import datetime
 
-VERSION = (1, 4, 1)
-VERSION_STR = '1.4.1'
+VERSION = (1, 5, 1)
+VERSION_STR = '1.5.1'
 PRODUCT = 'o4/version.py'
 
 REQ_MD5 = '43a9b7190217ebf4434beeb068e7a833'

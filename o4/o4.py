@@ -910,8 +910,7 @@ def o4_sync(changelist,
     progress = f"| {o4bin} progress" if sys.stdin.isatty() and progress_enabled() else ''
     pyforce = 'pyforce'  #pyforce = 'pyforce' + (' --debug --' if os.environ.get('DEBUG', '') else '')
     keep_case = f'| {o4bin} keep --case' if sys.platform == 'darwin' else ''
-    checksum_with_case = (f"| {manifold_big} {o4bin} drop --checksum"
-                          f"{keep_case}")
+    checksum_with_case = (f"| {manifold_big} {o4bin} drop --checksum" f"{keep_case}")
 
     if previous_cl == changelist and not force:
         print(f'*** INFO: {os.getcwd()} is already synced to {changelist}, use -f to force a'
@@ -1384,7 +1383,7 @@ def depot_abs_path(path):
         if 'BLT_HOME' in os.environ:
             os.environ['CLIENT_ROOT'] = os.environ['BLT_HOME']
         else:
-            os.environ['CLIENT_ROOT'] = pyforce_info()['clientRoot']
+            os.environ['CLIENT_ROOT'] = pyforce_info()['clientRoot'].rstrip('/')
     path = os.path.abspath(os.path.expanduser(path.replace('...', '').rstrip('/')))
     if not path.startswith('//'):
         path = path.replace(os.environ['CLIENT_ROOT'][1:], '')
@@ -1451,7 +1450,15 @@ def add_implicit_args(args):
 def main():
     from docopt import docopt
 
-    os.environ['PYTHONUNBUFFERED'] = 'true'
+    if 'O4_ROOT_PID' not in os.environ:
+        os.environ['O4_ROOT_PID'] = f'{os.getpid()}'
+        os.environ['PYTHONUNBUFFERED'] = 'true'
+        # p4 ignores the actual directory and relies on $PWD,
+        # and the shell is not reliable
+        os.environ['PWD'] = os.getcwd()
+        if 'CLIENT_ROOT' in os.environ:
+            del os.environ['CLIENT_ROOT']
+
     args = sys.argv[1:]
     add_implicit_args(args)
     if 'pyforce' in args and '--' not in args:

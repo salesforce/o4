@@ -499,7 +499,7 @@ def o4_filter(filtertype, filters, verbose):
             haves = {Pyforce.unescape(p['depotFile'])[len(dep) + 1:]: True
                      for p in haves}
         except KeyError as e:
-            print("*** WARNING: PLEASE TELL pbergen:", e)
+            print("*** WARNING: PLEASE TELL pbergen ON SLACK:", e)
             with NamedTemporaryFile(dir='.o4', delete=False, prefix='havesbug-') as fout:
                 print("  SYS.ARGV:", sys.argv)
                 print("  CWD:", os.getcwd())
@@ -509,7 +509,7 @@ def o4_filter(filtertype, filters, verbose):
                 print("CWD:", os.getcwd(), file=fout)
                 print("KEYERROR:", [p for p in haves if 'depotFile' not in p], file=fout)
                 print("HAVES:", haves, file=fout)
-            print("*** WARNING: PLEASE SEND THE ABOVE TO pbergen ^^^")
+            print("*** WARNING: PLEASE SLACK THE ABOVE TO pbergen ^^^")
             haves = {Pyforce.unescape(p['depotFile'])[len(dep) + 1:]: True
                      for p in haves if 'depotFile' in p}
 

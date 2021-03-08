@@ -494,8 +494,19 @@ def o4_filter(filtertype, filters, verbose):
         if len(haves) == 1 and haves[0].get('data', '').endswith('file(s) not on client.\n'):
             dirname = '/...'
             haves = list(Pyforce('have', dep + dirname))
-        haves = {Pyforce.unescape(p['depotFile'])[len(dep) + 1:]: True
-                 for p in haves}
+        try:
+            haves = {Pyforce.unescape(p['depotFile'])[len(dep) + 1:]: True
+                     for p in haves}
+        except KeyError as e:
+            print("*** WARNING: PLEASE TELL pbergen:", e)
+            print("  SYS.ARGV:", sys.argv)
+            print("  CWD:", os.getcwd())
+            print("  KEYERROR:", [p for p in haves if 'depotFile' not in p])
+            print("  HAVES:", haves)
+            print("*** WARNING: PLEASE SEND THE ABOVE TO pbergen ^^^")
+            haves = {Pyforce.unescape(p['depotFile'])[len(dep) + 1:]: True
+                     for p in haves if 'depotFile' in p}
+
         p4have.update(haves)
         if dirname == '/...':
             p4have[dirname] = True

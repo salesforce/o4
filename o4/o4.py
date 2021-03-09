@@ -494,6 +494,10 @@ def o4_filter(filtertype, filters, verbose):
         if len(haves) == 1 and haves[0].get('data', '').endswith('file(s) not on client.\n'):
             dirname = '/...'
             haves = list(Pyforce('have', dep + dirname))
+            if len(haves) == 1 and haves[0].get('data', '').endswith('file(s) not on client.\n'):
+                # The backoff directory can be the same as the original one, so it'll get the
+                # same error.
+                haves = []
         haves = {Pyforce.unescape(p['depotFile'])[len(dep) + 1:]: True
                  for p in haves}
         p4have.update(haves)

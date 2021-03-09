@@ -496,22 +496,25 @@ def o4_filter(filtertype, filters, verbose):
             dirname = '/...'
             haves = list(Pyforce('have', dep + dirname))
         try:
-            haves = {Pyforce.unescape(p['depotFile'])[len(dep) + 1:]: True
-                     for p in haves}
+            haves = {Pyforce.unescape(p['depotFile'])[len(dep) + 1:]: True for p in haves}
         except KeyError as e:
             print("*** WARNING: PLEASE TELL pbergen ON SLACK:", e)
-            with NamedTemporaryFile(dir='.o4', delete=False, prefix='havesbug-') as fout:
-                print("  SYS.ARGV:", sys.argv)
-                print("  CWD:", os.getcwd())
-                print("  KEYERROR:", [p for p in haves if 'depotFile' not in p])
-                print("  LOG:", fout.name)
+            with NamedTemporaryFile(mode='w+b', dir='.o4', delete=False,
+                                    prefix='havesbug-') as fout:
+                print("  SYS.ARGV:", sys.argv, file=sys.stderr)
+                print("  CWD:", os.getcwd(), file=sys.stderr)
+                print("  KEYERROR:", [p for p in haves if 'depotFile' not in p], file=sys.stderr)
+                print("  LOG:", fout.name, file=sys.stderr)
                 print("SYS.ARGV:", sys.argv, file=fout)
                 print("CWD:", os.getcwd(), file=fout)
                 print("KEYERROR:", [p for p in haves if 'depotFile' not in p], file=fout)
                 print("HAVES:", haves, file=fout)
             print("*** WARNING: PLEASE SLACK THE ABOVE TO pbergen ^^^")
-            haves = {Pyforce.unescape(p['depotFile'])[len(dep) + 1:]: True
-                     for p in haves if 'depotFile' in p}
+            haves = {
+                Pyforce.unescape(p['depotFile'])[len(dep) + 1:]: True
+                for p in haves
+                if 'depotFile' in p
+            }
 
         p4have.update(haves)
         if dirname == '/...':
@@ -553,8 +556,7 @@ def o4_filter(filtertype, filters, verbose):
                 if opened_for_add:
                     should_exist = True
 
-        return (os.path.lexists(row[F_PATH]) and
-                not os.path.isdir(row[F_PATH])) == should_exist
+        return (os.path.lexists(row[F_PATH]) and not os.path.isdir(row[F_PATH])) == should_exist
 
     def f_checksum(row):
         if os.path.lexists(row[F_PATH]):

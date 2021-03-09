@@ -495,27 +495,11 @@ def o4_filter(filtertype, filters, verbose):
         if len(haves) == 1 and haves[0].get('data', '').endswith('file(s) not on client.\n'):
             dirname = '/...'
             haves = list(Pyforce('have', dep + dirname))
-        try:
-            haves = {Pyforce.unescape(p['depotFile'])[len(dep) + 1:]: True for p in haves}
-        except KeyError as e:
-            print("*** WARNING: PLEASE TELL pbergen ON SLACK:", e)
-            with NamedTemporaryFile(mode='w+b', dir='.o4', delete=False,
-                                    prefix='havesbug-') as fout:
-                print("  SYS.ARGV:", sys.argv, file=sys.stderr)
-                print("  CWD:", os.getcwd(), file=sys.stderr)
-                print("  KEYERROR:", [p for p in haves if 'depotFile' not in p], file=sys.stderr)
-                print("  LOG:", fout.name, file=sys.stderr)
-                print("SYS.ARGV:", sys.argv, file=fout)
-                print("CWD:", os.getcwd(), file=fout)
-                print("KEYERROR:", [p for p in haves if 'depotFile' not in p], file=fout)
-                print("HAVES:", haves, file=fout)
-            print("*** WARNING: PLEASE SLACK THE ABOVE TO pbergen ^^^")
-            haves = {
-                Pyforce.unescape(p['depotFile'])[len(dep) + 1:]: True
-                for p in haves
-                if 'depotFile' in p
-            }
-
+            if len(haves) == 1 and haves[0].get('data', '').endswith('file(s) not on client.\n'):
+                # The backoff directory can be the same as the original one, so it'll get the
+                # same error.
+                haves = []
+        haves = {Pyforce.unescape(p['depotFile'])[len(dep) + 1:]: True for p in haves}
         p4have.update(haves)
         if dirname == '/...':
             p4have[dirname] = True

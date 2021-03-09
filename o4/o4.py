@@ -1544,8 +1544,6 @@ def main():
             else:
                 # This order is the best for performance, think before rearranging.
                 o4_filter(filtertype[0], (
-                    ('have', opts['--have'], False),
-                    ('have', opts['--not-have'], True),
                     ('deletes', opts['--deletes'], False),
                     ('deletes', opts['--not-deletes'], True),
                     ('existence', opts['--existence'], False),
@@ -1554,6 +1552,8 @@ def main():
                     ('checksum', opts['--not-checksum'], True),
                     ('case', opts['--case'], False),
                     ('case', opts['--not-case'], True),
+                    ('have', opts['--have'], False),
+                    ('have', opts['--not-have'], True),
                     ('open', opts['--open'], False),
                     ('open', opts['--not-open'], True),
                     ('deleted', opts['--deleted'], False),

@@ -89,6 +89,7 @@ import sys
 import glob
 import time
 from functools import partial
+from tempfile import NamedTemporaryFile
 
 from subprocess import check_call, check_output, CalledProcessError, DEVNULL
 from signal import SIGINT
@@ -100,7 +101,7 @@ err_print = partial(print, file=sys.stderr)
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from o4_pyforce import Pyforce, P4Error, P4TimeoutError, info as pyforce_info, \
-    client as pyforce_client, clear_cache
+    client as pyforce_client
 from o4_fstat import fstat_from_csv, fstat_iter, fstat_path, \
     fstat_split, fstat_join, get_fstat_cache, \
     F_REVISION, F_FILE_SIZE, F_CHECKSUM, F_PATH, F_CHANGELIST
@@ -494,8 +495,11 @@ def o4_filter(filtertype, filters, verbose):
         if len(haves) == 1 and haves[0].get('data', '').endswith('file(s) not on client.\n'):
             dirname = '/...'
             haves = list(Pyforce('have', dep + dirname))
-        haves = {Pyforce.unescape(p['depotFile'])[len(dep) + 1:]: True
-                 for p in haves}
+            if len(haves) == 1 and haves[0].get('data', '').endswith('file(s) not on client.\n'):
+                # The backoff directory can be the same as the original one, so it'll get the
+                # same error.
+                haves = []
+        haves = {Pyforce.unescape(p['depotFile'])[len(dep) + 1:]: True for p in haves}
         p4have.update(haves)
         if dirname == '/...':
             p4have[dirname] = True
@@ -536,8 +540,7 @@ def o4_filter(filtertype, filters, verbose):
                 if opened_for_add:
                     should_exist = True
 
-        return (os.path.lexists(row[F_PATH]) and
-                not os.path.isdir(row[F_PATH])) == should_exist
+        return (os.path.lexists(row[F_PATH]) and not os.path.isdir(row[F_PATH])) == should_exist
 
     def f_checksum(row):
         if os.path.lexists(row[F_PATH]):
@@ -901,16 +904,12 @@ def o4_sync(changelist,
         return cmd
 
     if not clientspec_is_vanilla():
-        # If there was no cached client, or if we refresh it and
-        # it's still bad, then abort.
-        if not clear_cache('client') or not clientspec_is_vanilla():
-            clear_cache('client')
-            sys.exit('*** ERROR: o4 does not support a clientspec that maps a depot '
-                     'path to a non-matching local path. '
-                     'Are you aware that you have such a mapping? Do you need it? '
-                     'If not, please remove it and sync again. If so, '
-                     'please post to the BLT chatter group that you have such a '
-                     'clientspec; meanwhile you must use p4/p4v to sync.')
+        sys.exit('*** ERROR: o4 does not support a clientspec that maps a depot '
+                 'path to a non-matching local path. '
+                 'Are you aware that you have such a mapping? Do you need it? '
+                 'If not, please remove it and sync again. If so, '
+                 'please post to the BLT chatter group that you have such a '
+                 'clientspec; meanwhile you must use p4/p4v to sync.')
 
     o4bin = find_o4bin()
 

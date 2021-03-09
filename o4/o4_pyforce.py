@@ -209,64 +209,23 @@ def changes(depot_path, lower, upper=None):
             Pyforce.escape(depot_path), revs)))
 
 
-def _cache_get(cmd, max_age=24 * 3600):
-    cname = os.path.expanduser('~/.o4/.' + cmd)
-    try:
-        st = os.stat(cname)
-        if time.time() - st.st_ctime > max_age:
-            os.unlink(cname)
-        else:
-            with open(cname, 'rb') as fin:
-                res = pickle.load(fin).get(os.environ['P4CLIENT'], None)
-                if res:
-                    print(f'*** INFO: Using cached result for {cmd} from {cname}', file=sys.stderr)
-                return res
-    except (pickle.UnpicklingError, FileNotFoundError, EOFError):
-        pass
-
-
-def _cache_put(cmd, pyf):
-    cname = os.path.expanduser('~/.o4/.' + cmd)
-    print(f'*** INFO: Caching result for {cmd} into {cname}', file=sys.stderr)
-    os.makedirs(os.path.dirname(cname), exist_ok=True)
-    with open(cname, 'wb') as fout:
-        res = list(pyf)
-        pickle.dump({os.environ['P4CLIENT']: res}, fout)
-        return res
-
-
-def info():
+def info(cache=[]):
     """
     Returns the server info. Reply is cached for future reference.
     """
-    res = _cache_get('info')
-    if not res:
-        res = _cache_put('info', Pyforce('info'))
-    return res[0]
+    if not cache:
+        cache.extend(Pyforce('info'))
+    return cache[0]
 
 
-def client():
+def client(cache=[]):
     """
     Returns the clientspec object. Reply is cached for future
     reference.
     """
-    res = _cache_get('client')
-    if not res:
-        res = _cache_put('client', Pyforce('client', '-o'))
-    return res[0]
-
-
-def clear_cache(cmd):
-    '''Remove the cached copy of the "cmd" data.
-       Returns True if there was a cache, False otherwise.
-    '''
-    try:
-        cname = os.path.expanduser(f'~/.o4/.{cmd}')
-        os.remove(cname)
-        print(f'*** INFO: Removed cached result for {cmd}')
-        return True
-    except:
-        return False
+    if not cache:
+        cache.extend(Pyforce('client', '-o'))
+    return cache[0]
 
 
 def head(depot_path):

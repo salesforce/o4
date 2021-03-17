@@ -167,6 +167,7 @@ def p4_operation(path, revision):
     Returns the operation that was done for the path/revision recorded
     in fstat. Returns the empty string if unable to find it.
     """
+    path = Pyforce.escape(path)
     recs = list(Pyforce('fstat', f'{path}#{revision}'))
     if not recs:
         return ''
@@ -473,7 +474,7 @@ def o4_filter(filtertype, filters, verbose):
 
     def _opened(p4open={}):
         if not p4open:
-            dep = _depot_path().replace('/...', '')
+            dep = Pyforce.escape(_depot_path()).replace('/...', '')
             p4open.update({
                 Pyforce.unescape(p['depotFile'])[len(dep) + 1:]: p['action']
                 for p in Pyforce('opened', dep + '/...')
@@ -491,10 +492,10 @@ def o4_filter(filtertype, filters, verbose):
         else:
             dirname = '/...'
         dep = _depot_path().replace('/...', '')
-        haves = list(Pyforce('have', dep + dirname))
+        haves = list(Pyforce('have', Pyforce.escape(dep + dirname)))
         if len(haves) == 1 and haves[0].get('data', '').endswith('file(s) not on client.\n'):
             dirname = '/...'
-            haves = list(Pyforce('have', dep + dirname))
+            haves = list(Pyforce('have', Pyforce.escape(dep + dirname)))
             if len(haves) == 1 and haves[0].get('data', '').endswith('file(s) not on client.\n'):
                 # The backoff directory can be the same as the original one, so it'll get the
                 # same error.
@@ -960,8 +961,7 @@ def o4_sync(changelist,
     progress = f"| {o4bin} progress" if sys.stdin.isatty() and progress_enabled() else ''
     pyforce = 'pyforce'  #pyforce = 'pyforce' + (' --debug --' if os.environ.get('DEBUG', '') else '')
     keep_case = f'| {o4bin} keep --case' if sys.platform == 'darwin' else ''
-    checksum_with_case = (f"| {manifold_big} {o4bin} drop --checksum"
-                          f"{keep_case}")
+    checksum_with_case = (f"| {manifold_big} {o4bin} drop --checksum" f"{keep_case}")
 
     if previous_cl == changelist and not force:
         print(f'*** INFO: {os.getcwd()} is already synced to {changelist}, use -f to force a'
@@ -1061,7 +1061,7 @@ def o4_sync(changelist,
               f"| {manifold_big} {o4bin} drop --checksum")
     if seed:
         syncit = f"| {manifold_verbose} {o4bin} seed-from {seed}"
-        if not list(Pyforce('opened', f'{seed}/...')):
+        if not list(Pyforce('opened', Pyforce.escape(f'{seed}/...'))):
             _, seed_fstat = get_fstat_cache(10_000_000_000, seed + '/.o4')
             if seed_fstat:
                 syncit += f" --fstat {os.path.abspath(seed_fstat)}"
@@ -1082,11 +1082,7 @@ def o4_sync(changelist,
             consume(Pyforce('-q', 'sync', '-k', f'...@{changelist}'))
             print("*** INFO: Flushing took {:.2f} minutes".format((time.time() - t0) / 60))
 
-    cmd = (f"{fstat} "
-           f"| {o4bin} drop --deletes"
-           f"{progress}"
-           f"{syncit}"
-           f"{retry}")
+    cmd = (f"{fstat} " f"| {o4bin} drop --deletes" f"{progress}" f"{syncit}" f"{retry}")
     run_cmd(cmd)
 
     actual_cl, _ = get_fstat_cache(changelist)
@@ -1273,7 +1269,7 @@ def o4_clean(changelist, quick=False, resume=False, discard=False):
         dep = _depot_path().replace('/...', '')
         p4open = [
             Pyforce.unescape(p['depotFile'])[len(dep) + 1:]
-            for p in Pyforce('opened', dep + '/...')
+            for p in Pyforce('opened', Pyforce.escape(dep) + '/...')
             if 'delete' not in p['action']
         ]
         print(f"*** INFO: Not cleaning {len(p4open)} files opened for edit.")

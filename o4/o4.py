@@ -1156,6 +1156,7 @@ def o4_status(changelist, depot, check_all, quick):
         f[F_PATH]: f
         for f in sorted((fstat_split(f) for f in res.stdout.splitlines()), key=lambda x: x[F_PATH])
     }
+    # stderr is expected to have a summary line like "{'files': 669854, 'deleted': 72}"
     file_stats = eval([line for line in res.stderr.splitlines() if line.startswith('{')][0], {}, {})
 
     has_open = {f['depotFile'].replace(depot, ''): f for f in Pyforce('opened', '...')}

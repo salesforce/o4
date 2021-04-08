@@ -341,7 +341,8 @@ def o4_fstat(changelist,
         with open(keep, 'rt', encoding='utf8') as fin:
             keep = set(f[:-1] for f in fin)
     for fname in add:
-        print(f"{changelist},{fname.replace(',', ';.')},USECL,0,DEADFACEDEADFACEDEADFACEDEADFACE")
+        fname = fname.replace(';', ';;').replace(',', ';.')
+        print(f"{changelist},{fname},USECL,0,DEADFACEDEADFACEDEADFACEDEADFACE")
 
     if previous_cl and previous_cl > changelist:
         # Syncing backwards requires us to delete files that were added
@@ -362,7 +363,8 @@ def o4_fstat(changelist,
             if not f:
                 continue
             if f[F_PATH] not in past_filenames:
-                print(f'{changelist},{f[F_PATH]},0,0,')
+                fpath = f[F_PATH].replace(';', ';;').replace(',', ';.')
+                print(f'{changelist},{fpath},0,0,')
                 if force:
                     drop.add(f[F_PATH])
             elif not force:

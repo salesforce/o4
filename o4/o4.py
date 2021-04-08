@@ -911,8 +911,9 @@ def o4_sync(changelist,
                  'path to a non-matching local path. '
                  'Are you aware that you have such a mapping? Do you need it? '
                  'If not, please remove it and sync again. If so, '
-                 'please post to the BLT chatter group that you have such a '
-                 'clientspec; meanwhile you must use p4/p4v to sync.')
+                 'please post to the #tmp-core-developer-support Slack channel '
+                 'saying that you have such a clientspec; meanwhile you must
+                 'use p4/p4v to sync.')
 
     o4bin = find_o4bin()
 
@@ -1430,11 +1431,14 @@ def o4_head(paths):
 
 
 def depot_abs_path(path):
+    # This caching makes the client root only determined once in a given
+    # run of o4 (and all of its descendant processes).
+    if 'CLIENT_ROOT' in os.environ and 'CLIENT_ROOT_SET_BY' not in os.environ:
+        del os.environ['CLIENT_ROOT']
     if 'CLIENT_ROOT' not in os.environ:
-        if 'BLT_HOME' in os.environ:
-            os.environ['CLIENT_ROOT'] = os.environ['BLT_HOME']
-        else:
-            os.environ['CLIENT_ROOT'] = pyforce_info()['clientRoot'].rstrip('/')
+        os.environ['CLIENT_ROOT'] = pyforce_info()['clientRoot'].rstrip('/')
+        os.environ['CLIENT_ROOT_SET_BY'] = str(os.getpid())
+
     path = os.path.abspath(os.path.expanduser(path.replace('...', '').rstrip('/')))
     if not path.startswith('//'):
         path = path.replace(os.environ['CLIENT_ROOT'][1:], '')

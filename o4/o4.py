@@ -912,7 +912,7 @@ def o4_sync(changelist,
                  'Are you aware that you have such a mapping? Do you need it? '
                  'If not, please remove it and sync again. If so, '
                  'please post to the #tmp-core-developer-support Slack channel '
-                 'saying that you have such a clientspec; meanwhile you must
+                 'saying that you have such a clientspec; meanwhile you must '
                  'use p4/p4v to sync.')
 
     o4bin = find_o4bin()

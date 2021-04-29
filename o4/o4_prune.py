@@ -1,4 +1,3 @@
-
 from pathlib import Path
 from time import time
 
@@ -23,9 +22,8 @@ def prune_cleaned(o4_dir):
         return
     age = time() - cleaned.stat().st_mtime
     if age < 86400 * 2:
-        print('*** INFO: You have files left behind by a recent "clean" operation.\n'
-              '          It will be pruned soon.'
-             )
+        print('*** INFO: You have files left behind by a recent "clean" operation.')
+        print('          It will be pruned soon.')
         return
     print('*** INFO: Pruning abandoned "cleaned" directory')
     prune_item(cleaned)
@@ -33,12 +31,11 @@ def prune_cleaned(o4_dir):
         return
     n_left = sum(1 for f in cleaned.glob('**/*') if not f.is_dir())
     s = '' if n_left == 1 else 's'
-    print(f'*** WARNING: Abandoned "cleaned" directory still contains {n_left}\n'
-          f'             possibly valuable file{s}.\n'
-           '             Please check if they contain work that you do not want\n'
-           '             to lose. If not, remove your cleaned directory with \n'
-          f'             rm -rf {cleaned.resolve()}'
-         )
+    print(f'*** WARNING: Abandoned "cleaned" directory still contains {n_left}')
+    print(f'             possibly valuable file{s}.')
+    print(f'             Please check if they contain work that you do not want')
+    print(f'             to lose. If not, remove your cleaned directory with')
+    print(f'             rm -rf {cleaned.resolve()}')
 
 
 def prune_item(p):

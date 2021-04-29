@@ -104,8 +104,7 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from o4_pyforce import Pyforce, P4Error, P4TimeoutError, info as pyforce_info, \
     client as pyforce_client
 from o4_fstat import (fstat_from_csv, fstat_iter, fstat_path, fstat_split, fstat_join,
-                      get_fstat_cache, F_REVISION, F_FILE_SIZE, F_CHECKSUM,
-                      F_PATH, F_CHANGELIST)
+                      get_fstat_cache, F_REVISION, F_FILE_SIZE, F_CHECKSUM, F_PATH, F_CHANGELIST)
 from o4_prune import prune_data
 from o4_progress import progress_iter, progress_show, progress_enabled
 from o4_utils import chdir, consume, o4_log, caseful_accurate

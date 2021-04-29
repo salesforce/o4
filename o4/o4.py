@@ -104,9 +104,9 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from o4_pyforce import Pyforce, P4Error, P4TimeoutError, info as pyforce_info, \
     client as pyforce_client
 from o4_fstat import (fstat_from_csv, fstat_iter, fstat_path, fstat_split, fstat_join,
-                      get_fstat_cache, prune_fstat_cache, F_REVISION, F_FILE_SIZE, F_CHECKSUM,
+                      get_fstat_cache, F_REVISION, F_FILE_SIZE, F_CHECKSUM,
                       F_PATH, F_CHANGELIST)
-
+from o4_prune import prune_data
 from o4_progress import progress_iter, progress_show, progress_enabled
 from o4_utils import chdir, consume, o4_log, caseful_accurate
 
@@ -1598,7 +1598,7 @@ def main():
             sys.exit(parallel_fstat(opts))
 
     if opts['prune']:
-        prune_fstat_cache(os.path.join(opts['<path>'], '.o4'))
+        prune_data(os.path.join(opts['<path>'], '.o4'))
         sys.exit(0)
     if '@' in opts['<path>']:
         if opts['<path>'].startswith('@'):

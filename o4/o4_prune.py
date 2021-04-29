@@ -31,7 +31,7 @@ def prune_cleaned(o4_dir):
         return
     n_left = sum(1 for f in cleaned.glob('**/*') if not f.is_dir())
     s = '' if n_left == 1 else 's'
-    print(f'*** WARNING: Abandoned "cleaned" directory still contains {n_left}')
+    print(f'*** WARNING: Abandoned "cleaned" directory still contains {n_left:,d}')
     print(f'             possibly valuable file{s}.')
     print(f'             Please check if they contain work that you do not want')
     print(f'             to lose. If not, remove your cleaned directory with')
@@ -39,7 +39,9 @@ def prune_cleaned(o4_dir):
 
 
 def prune_item(p):
-    if p.is_dir():
+    if p.is_symlink():
+        print(f'*** WARNING: Doing nothing with symlink {p} -> {p.readlink()}')
+    elif p.is_dir():
         for child in p.iterdir():
             prune_item(child)
         if not list(p.iterdir()):
@@ -47,3 +49,5 @@ def prune_item(p):
     elif p.is_file():
         if p.stat().st_mode & 0o700 == 0o400:
             p.unlink()
+    else:
+        print(f'*** WARNING: Doing nothing with non-regular file {p.resolve()}')

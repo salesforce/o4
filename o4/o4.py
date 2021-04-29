@@ -11,6 +11,7 @@ Usage:
   o4 [-q] pyforce [--debug] [--no-rev] [--] <p4args>...
   o4 head <paths>...
   o4 progress
+  o4 prune <path>
   o4 fail
   o4 version [--at-least <compare>]
 
@@ -102,9 +103,9 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from o4_pyforce import Pyforce, P4Error, P4TimeoutError, info as pyforce_info, \
     client as pyforce_client
-from o4_fstat import fstat_from_csv, fstat_iter, fstat_path, \
-    fstat_split, fstat_join, get_fstat_cache, \
-    F_REVISION, F_FILE_SIZE, F_CHECKSUM, F_PATH, F_CHANGELIST
+from o4_fstat import (fstat_from_csv, fstat_iter, fstat_path, fstat_split, fstat_join,
+                      get_fstat_cache, F_REVISION, F_FILE_SIZE, F_CHECKSUM, F_PATH, F_CHANGELIST)
+from o4_prune import prune_data
 from o4_progress import progress_iter, progress_show, progress_enabled
 from o4_utils import chdir, consume, o4_log, caseful_accurate
 
@@ -620,7 +621,6 @@ def o4_pyforce(debug, no_revision, args: list, quiet=False):
     the current file system (macOS).
     """
 
-    from tempfile import NamedTemporaryFile
     from collections import defaultdict
 
     class LogAndAbort(Exception):
@@ -829,7 +829,6 @@ def o4_sync(changelist,
               with p4-related programs, to avoid lots of connections to the server.
 
     """
-    from tempfile import NamedTemporaryFile
 
     def clientspec_is_vanilla():
         'Return True if every View line is the same on the left and the right.'
@@ -1108,6 +1107,10 @@ def o4_sync(changelist,
     if previous_cl == actual_cl and not force:
         print(f'*** INFO: {os.getcwd()} is already synced to {actual_cl}, use -f to force a'
               f' full verification.')
+    try:
+        check_call([o4bin, 'prune', '.'])
+    except CalledProcessError:
+        pass
 
 
 def o4_status(changelist, depot, check_all, quick):
@@ -1142,7 +1145,7 @@ def o4_status(changelist, depot, check_all, quick):
 
     os.environ['O4_PROGRESS'] = 'false'
     keep_case = f'| {o4bin} keep --case' if sys.platform == 'darwin' else ''
-    drop_deleted = f"| grep -v ',$'" if not check_all else ''
+    drop_deleted = "| grep -v ',$'" if not check_all else ''
     changed = f" --changed {cur*4//5}" if quick else ''
     cmd = (f"{o4bin} fstat -v .@{cur}{changed}{drop_deleted}"
            f"| {manibin} {o4bin} drop --checksum{keep_case}")
@@ -1258,7 +1261,7 @@ def o4_clean(changelist, quick=False, resume=False, discard=False):
     source = f'{target}/.o4/cleaning'
     cleaned = f'{target}/.o4/cleaned'
     if rm_empty_dirs(cleaned):
-        print(f'*** ERROR: Unhandled files still exist from a previous clean run.')
+        print('*** ERROR: Unhandled files still exist from a previous clean run.')
         print(f'           Please delete (if unwanted) or move files from {cleaned}')
         print(f'           back to its place in {target}.')
         sys.exit(1)
@@ -1273,7 +1276,8 @@ def o4_clean(changelist, quick=False, resume=False, discard=False):
         dep = _depot_path().replace('/...', '')
         p4open = [
             Pyforce.unescape(p['depotFile'])[len(dep) + 1:]
-            for p in Pyforce('opened', Pyforce.escape(dep) + '/...')
+            for p in Pyforce('opened',
+                             Pyforce.escape(dep) + '/...')
             if 'delete' not in p['action']
         ]
         print(f"*** INFO: Not cleaning {len(p4open)} files opened for edit.")
@@ -1301,7 +1305,7 @@ def o4_clean(changelist, quick=False, resume=False, discard=False):
         if n_files:
             err_print(f'          {n_files} dirty files remain under {savedir}')
         else:
-            err_print(f'          Congratulations! No dirty files left over.')
+            err_print('          Congratulations! No dirty files left over.')
     else:
         assert source.endswith('cleaning')
         shutil.rmtree(source)
@@ -1592,6 +1596,9 @@ def main():
         else:
             sys.exit(parallel_fstat(opts))
 
+    if opts['prune']:
+        prune_data(os.path.join(opts['<path>'], '.o4'))
+        sys.exit(0)
     if '@' in opts['<path>']:
         if opts['<path>'].startswith('@'):
             opts['<path>'] = '...' + opts['<path>']
@@ -1600,6 +1607,7 @@ def main():
             opts['<path>'] = opts['<path>'].rsplit('@', 1)[0]
         except ValueError:
             print('*** WARNING: Could not parse @-revision, ignored.')
+
     opts['<path>'] = depot_abs_path(opts['<path>'])
     target = os.path.join(os.environ['CLIENT_ROOT'], opts['<path>'][2:])
     check_higher_sync(target)

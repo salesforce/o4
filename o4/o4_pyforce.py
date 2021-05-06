@@ -5,8 +5,6 @@ Wrappers for the p4 binary.
 
 import os
 import sys
-import time
-import pickle
 
 
 class P4Error(Exception):
@@ -95,6 +93,8 @@ class Pyforce(object):
                           b'no revision(s) above those at that changelist number' in data):
                         print(f'#o4pass-info#{data.decode("utf-8",errors="ignore")}')
                         res[b'code'] = b'mute'
+                    elif b'must refer to client' in data:
+                        res[b'data'] += b'This is likely due to a bad Root in your clientspec.'
                     # Other specific errors we pass along
                     elif b'clobber writable file' in data:
                         res[b'code'] = b'error'

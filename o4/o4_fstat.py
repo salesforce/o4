@@ -365,15 +365,21 @@ def fstat_iter(depot_path, to_changelist, from_changelist=0, cache_dir='.o4'):
                         fix = False
                         if 'Too many rows scanned' in a.get('data', ''):
                             if cache_cl:
-                                print(
-                                    f"{CLR}*** WARNING: Maxrowscan occurred, ignoring cache {cache_fname}",
-                                    file=sys.stderr)
+                                msg = f"Maxrowscan occurred, ignoring cache {cache_fname}."
+                                msg += ' This is probably due to a bad Root in your clientspec;'
+                                msg += ' if not, contact the Perforce admins and let them know.'
+                                print(f"{CLR}*** WARNING: {msg}", file=sys.stderr)
                                 fix = True
                                 missing_range = (to_changelist, None)
                                 retry += 1
                         elif 'Request too large' in a.get('data', ''):
+                            msg = f"*** ERROR: 'Request too large'. {depot_path} may be too broad."
+                            if depot_path == '//...':
+                                msg += ' This is almost certainly due to a bad Root in your clientspec.'
+                            else:
+                                msg += ' This may be due to a bad Root in your clientspec.'
                             sys.exit(
-                                f"{CLR}*** ERROR: 'Request too large'. {depot_path} may be too broad."
+                                f"{CLR}{msg}"
                             )
                         elif 'no such file' in a.get('data', ''):
                             print(f"{CLR}*** INFO: Empty changelist range ({missing_range}).",

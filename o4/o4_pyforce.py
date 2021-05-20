@@ -177,12 +177,12 @@ class Pyforce(object):
             fileSize = int(fileSize)
         try:
             with open(fname, 'rb') as f:
-                if headType == 'utf16':
+                if headType.startswith('utf16'):
                     # FIXME: Don't overflow and die if there is a giant utf16 file
                     u = f.read().decode('utf16')
                     hash_md5.update(u.encode('utf8'))
                 else:
-                    if headType == 'utf8':
+                    if headType.startswith('utf8'):
                         fs = os.fstat(f.fileno())
                         if fs.st_size > fileSize:
                             # Skip utf8 BOM when computing digest, if filesize differs from st_size

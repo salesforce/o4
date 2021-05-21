@@ -10,7 +10,7 @@
     (Known because the server has generated data for them.)
 
 /o4-http/p4password
-    When the Perforce password for the user that the server users, POST 
+    When the Perforce password for the user that the server users is changed, POST 
     to this endpoint and supply this JSON document:
 
     {"previous-password":<previously working password>,

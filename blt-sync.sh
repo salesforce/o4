@@ -15,7 +15,7 @@ for dir in o4 server gatling; do
         if [ $diff = true ]; then
             echo -en "[$dir/$fname] \tDo you want to overwrite with changes from $blt_name? [Yn] "
             read go
-            if [[ "$go" != n && "$go" != N ]]; then
+            if [[ "$go" = y || "$go" = Y ]]; then
                 cp -a $blt_name $fname
                 git diff $fname
                 echo -n "Press [ENTER] to continue"

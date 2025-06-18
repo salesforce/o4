@@ -17,7 +17,7 @@ that a sync could not be met to 100%, `o4` will fail loudly. Crash and
 burn. No more silent errors!
 
 In addition to that `o4` allows some dramatic improvements to CI, more
-on that in the [server/README.md](server documentation).
+on that in the [server documentation](server/README.md).
 
 # Restrictions
 

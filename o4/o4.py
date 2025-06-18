@@ -1014,7 +1014,7 @@ def o4_sync(changelist,
             print(open_file_name, file=openf)
             if p['action'] == 'move/add':
                 move_adds.append(shquote(open_file_name))
-            if p['action'] == 'move/delete':
+            if p['action'] in ('move/delete', 'delete'):
                 move_deletes.append(shquote(open_file_name))
             if i < 10:
                 print(f'*** INFO: --keeping {open_file_name}')
@@ -1030,7 +1030,7 @@ def o4_sync(changelist,
         move_delete = ''
         if move_deletes:
             move_delete = ' --deleted '.join([''] + move_deletes)
-            move_delete = f"| {o4bin} drop {move_delete}"
+            move_delete = f"| {o4bin} drop {move_delete.strip()}"
 
         cmd = (f"{fstat} --keep {openf.name}{move_add}"
                f"| {gatling_verbose} -- {o4bin} {pyforce} sync"
